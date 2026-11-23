@@ -435,7 +435,14 @@
     body.wiz3d-only #modSettingsInline,
     body.wiz3d-only #tuningPanel { display: none !important; }
     body.wiz3d-only .profile-selector { grid-template-columns: 1fr 1.6fr !important; }
-    #wiz3dGameOptions { grid-template-columns: 1fr 1fr auto !important; }
+    /* Narrow windows: stack the hero buttons under each other instead of clipping them. */
+    @media (max-width: 1100px) {
+        .detail-hero-content { padding: 0 20px 18px; }
+        .detail-hero-actions { flex-direction: column; align-items: stretch; }
+    }
+    #wiz3dGameOptions { grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important; }
+    #wiz3dGameOptions .wiz3d-actions { grid-column: 1 / -1; display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
+    #reportModal .modal-content { box-sizing:border-box; max-height:calc(100vh - 32px) !important; max-width:calc(100vw - 32px); padding:22px; }
     </style>
 </head>
 <body>

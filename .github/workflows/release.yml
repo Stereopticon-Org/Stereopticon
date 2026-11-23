@@ -32,8 +32,12 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match package.json version $version"
             exit 1
           fi
-      - name: Build and upload to a draft release
-        run: npm run dist -- --publish always
+      # A tag builds and uploads to a draft release. Running the workflow by
+      # hand (Actions → Release → Run workflow) only builds, as a test: the
+      # files are kept as a workflow artifact and no release is touched.
+      - name: Build (and upload to a draft release for a tag)
+        shell: bash
+        run: npm run dist -- --publish ${{ startsWith(github.ref, 'refs/tags/') && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Keep the build as a workflow artifact

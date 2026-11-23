@@ -81,6 +81,34 @@ function bestWiz3DStatus(fixes) {
     return statuses.sort((a, b) => WIZ3D_STATUS_RANK.indexOf(a) - WIZ3D_STATUS_RANK.indexOf(b))[0];
 }
 
+// Graphics APIs a game uses, for the Graphics API filter: from the game's
+// own field, wiz3D's list ("DX9/DX11", "OpenGL/DX8") and the compatibility
+// database notes ("API: Direct3D 9 + Direct3D 10.").
+const API_ORDER = ['dx7', 'dx8', 'dx9', 'dx10', 'dx11', 'dx12', 'opengl', 'vulkan'];
+function apisFrom(text, out) {
+    for (const part of String(text || '').split(/[\/+,]|\band\b/i)) {
+        const v = part.toLowerCase().replace(/direct\s*3d|direct\s*x|d3d/g, 'dx').replace(/\s+/g, '');
+        if (/opengl|ogl/.test(v)) out.add('opengl');
+        else if (/vulkan/.test(v)) out.add('vulkan');
+        else {
+            const m = /dx(\d+)/.exec(v) || /^(\d+)$/.exec(v);
+            const n = m && Number(m[1]);
+            if (n >= 1 && n <= 7) out.add('dx7');        // DX5-7 share wiz3D's DX7 path
+            else if ([8, 9, 10, 11, 12].includes(n)) out.add(`dx${n}`);
+        }
+    }
+}
+function graphicsApis(g, fixes) {
+    const out = new Set();
+    for (const a of [].concat(g.graphics_api || [])) apisFrom(a, out);
+    for (const f of fixes) {
+        apisFrom(f.wiz3d_api_raw, out);
+        const m = /API:\s*([^.]+)\./.exec(f.notes || '');
+        if (m) apisFrom(m[1], out);
+    }
+    return API_ORDER.filter(a => out.has(a));
+}
+
 function sidebarProjection(g) {
     const fixes = Array.isArray(g.fixes) ? g.fixes : [];
     const outputs   = new Set();
@@ -120,6 +148,7 @@ function sidebarProjection(g) {
         is_vr_only:          isVrOnly,
         is_deprecated_only:  isDeprecatedOnly,
         wiz3d_status:        bestWiz3DStatus(fixes),
+        graphics_apis:       graphicsApis(g, fixes),
     };
 }
 

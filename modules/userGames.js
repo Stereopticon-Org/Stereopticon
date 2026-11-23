@@ -229,7 +229,16 @@ function sidebarRows() {
         rendering_methods: [], recommended_fix_type: '', fix_count: 0, fix_types: [],
         user_game: true, source: g.source,
         install_dir: g.install_dir || (g.exe_path ? path.dirname(g.exe_path) : ''),
+        // Known only once there is an exe (added games, or a Steam game whose
+        // exe was chosen); Steam games are not read at start-up.
+        graphics_apis: g.exe_path ? sidebarApis(graphicsApiOf(g.exe_path).api) : [],
     }));
+}
+
+function sidebarApis(api) {
+    if (!api) return [];
+    if (api === 'dx10-11') return ['dx11'];
+    return [api];
 }
 
 module.exports = { addFromExe, remove, setExe, discoverSteamGames, guessExe, list, getOne, sidebarRows, STORE };

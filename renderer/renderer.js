@@ -1008,7 +1008,7 @@ function wiz3dOptionsHtml() {
                     <option value="">Loading…</option>
                 </select>
             </div>
-            <div style="display:flex;gap:6px;align-items:center;height:34px;">
+            <div class="wiz3d-actions">
                 ${exeBtn}${removeBtn}
                 <button class="link-btn" style="border-color:var(--teal-border);color:var(--teal);" onclick="openReportModal('game')">Report a result</button>
             </div>
@@ -1463,6 +1463,15 @@ async function handleInstallClick() {
 async function handleLaunchClick() {
     const gamePath = getInstallPath();
     if (!gamePath) { showResult(false, 'Set the Game Folder path first — click Browse...'); return; }
+
+    // Pressing Launch before installing wiz3D installs it first, then launches.
+    if (selectedProfile && isWiz3DType(selectedProfile.type) && !installedFixIds.has(selectedProfile.id)) {
+        const launchBtn = document.getElementById('btnLaunchGame');
+        if (launchBtn) launchBtn.disabled = true;
+        try { await handleInstallClick(); }
+        finally { if (launchBtn) launchBtn.disabled = false; }
+        if (!installedFixIds.has(selectedProfile.id)) return;   // the install said why it failed
+    }
  
     // exe_name is the authoritative field; fall back to the segment of default_path
     // that looks like a filename (has an extension), then last segment.
@@ -2228,10 +2237,13 @@ function filterAndSortGames(games) {
     // Build the predicates each excluded filter implies, ONCE per filter
     // call. Then for every game, check if it satisfies any excluded
     // predicate → if so, hide it.
-    const excludePredicates = [...excluded].map(buildFilterPredicate).filter(Boolean);
+    // Only chips shown in the filter pane count: an exclusion saved for a
+    // chip that is now hidden (an output, say) must not hide games unseen.
+    const shownIds = new Set(FILTER_GROUPS.flatMap(g => visibleFilterItems(g).map(i => i.id)));
+    const excludePredicates = [...excluded].filter(id => shownIds.has(id)).map(buildFilterPredicate).filter(Boolean);
 
     // Predicate for the currently active (positive) filter, if any.
-    const activePred = (filterMode === 'all') ? null : buildFilterPredicate(filterMode);
+    const activePred = (filterMode === 'all' || !shownIds.has(filterMode)) ? null : buildFilterPredicate(filterMode);
 
     const showOtherTools  = isShowOtherTools();
 
@@ -2620,7 +2632,32 @@ const FILTER_GROUPS = [
         { id: 'installed',   label: 'Installed',         icon: '●' },
         { id: 'recent',      label: 'Recently played',   icon: '↻', sort: 'recent' },
     ]},
-    { title: 'Output', items: [
+    // How the game gets its stereo: the native paths first (the game renders
+    // both eyes itself; wiz3D only enables them), then automatic injection.
+    { title: 'Stereo type', items: [
+        { id: 'mod_hd3d',     label: 'Native: AMD HD3D',               icon: '◆' },
+        { id: 'mod_3dv_dm',   label: 'Native: 3D Vision Direct Mode',  icon: '◈' },
+        { id: 'mod_ogl_qbs',  label: 'Native: OpenGL quad-buffer',     icon: '▣' },
+        { id: 'mod_wiz3d',    label: 'Stereo Injector (automatic)',    icon: '✦' },
+    ]},
+    { title: 'wiz3D status', items: [
+        { id: 'wiz3d_working',  label: 'Working',          icon: '●' },
+        { id: 'wiz3d_partial',  label: 'Partly working',   icon: '◐' },
+        { id: 'wiz3d_untested', label: 'Untested',         icon: '○' },
+        { id: 'wiz3d_unknown',  label: 'Not rated',        icon: '◌' },
+        { id: 'wiz3d_broken',   label: 'Not working yet',  icon: '✕' },
+    ]},
+    { title: 'Graphics API', items: [
+        { id: 'api_dx7',    label: 'DirectX 7 and older', icon: '▫' },
+        { id: 'api_dx8',    label: 'DirectX 8',           icon: '▫' },
+        { id: 'api_dx9',    label: 'DirectX 9',           icon: '▪' },
+        { id: 'api_dx10',   label: 'DirectX 10',          icon: '▪' },
+        { id: 'api_dx11',   label: 'DirectX 11',          icon: '▪' },
+        { id: 'api_dx12',   label: 'DirectX 12',          icon: '▪' },
+        { id: 'api_opengl', label: 'OpenGL',              icon: '◇' },
+        { id: 'api_vulkan', label: 'Vulkan',              icon: '◇' },
+    ]},
+    { title: 'Output', otherTools: true, items: [
         { id: 'sr_weave',         label: 'Simulated Reality',   icon: '◈' },
         { id: 'vr_native',        label: 'Virtual Reality',     icon: '⊡' },
         { id: 'sbs',              label: 'Full Side-by-Side',   icon: '▥' },
@@ -2630,13 +2667,6 @@ const FILTER_GROUPS = [
         { id: 'frame_sequential', label: 'Active shutter',      icon: '▣' },
         { id: 'interlaced',       label: 'Interlaced',          icon: '☰' },
         { id: 'anaglyph',         label: 'Anaglyph',            icon: '◍' },
-    ]},
-    { title: 'wiz3D status', items: [
-        { id: 'wiz3d_working',  label: 'Working',          icon: '●' },
-        { id: 'wiz3d_partial',  label: 'Partly working',   icon: '◐' },
-        { id: 'wiz3d_untested', label: 'Untested',         icon: '○' },
-        { id: 'wiz3d_unknown',  label: 'Not rated',        icon: '◌' },
-        { id: 'wiz3d_broken',   label: 'Not working yet',  icon: '✕' },
     ]},
     { title: 'Features', otherTools: true, items: [
         { id: 'native_stereo', label: 'Native stereo',     icon: '◆' },
@@ -2649,14 +2679,10 @@ const FILTER_GROUPS = [
         { id: 'render_sequential',      label: 'Sequential-View',          icon: '▣' },
         { id: 'render_ai_reproj',       label: 'AI Reprojection',          icon: '✦' },
     ]},
-    { title: 'Mods', items: [
+    { title: 'Mods', otherTools: true, items: [
         { id: 'mod_uevr',         label: 'UEVR',                       icon: '⊕' },
         { id: 'mod_geo11',        label: 'Geo-11',                     icon: '◆' },
         { id: 'mod_3dmigoto',     label: '3DMigoto',                   icon: '◇' },
-        { id: 'mod_wiz3d',        label: 'wiz3D',                      icon: '✦' },
-        { id: 'mod_hd3d',         label: 'AMD HD3D Native',            icon: '▦' },
-        { id: 'mod_ogl_qbs',      label: 'OpenGL Quad-Buffer',         icon: '▣' },
-        { id: 'mod_3dv_dm',       label: '3D Vision Direct Mode',      icon: '◈' },
         { id: 'mod_3d_vision',    label: '3D Vision Automatic Mode',   icon: '◐' },
         { id: 'mod_helixmod',     label: 'HelixMod',                   icon: '⊞' },
         { id: 'mod_helixvision',  label: 'HelixVision',                icon: '⊠' },
@@ -2757,7 +2783,6 @@ window.toggleFilterGroup = function(title) {
 function visibleFilterItems(group) {
     if (isShowOtherTools()) return group.items;
     if (group.otherTools) return [];
-    if (group.title === 'Mods') return group.items.filter(i => isWiz3DType(MOD_FILTER_TO_TYPE[i.id]));
     return group.items;
 }
 
@@ -2765,6 +2790,10 @@ function buildFilterPredicate(id) {
     if (id.startsWith('wiz3d_')) {
         const status = id.slice('wiz3d_'.length);
         return g => g.wiz3d_status === status;
+    }
+    if (id.startsWith('api_')) {
+        const api = id.slice('api_'.length);
+        return g => (g.graphics_apis || []).includes(api);
     }
     if (id === 'headtracking')  return g => !!g.has_headtracking;
     if (id === 'native_stereo') return g => !!g.has_native_stereo;

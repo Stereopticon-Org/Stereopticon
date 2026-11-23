@@ -140,4 +140,32 @@ getDisplaySoftwareStatus:  (familyId, deviceId)        =>
         ipcRenderer.on('wiz3d:progress', handler);
         return () => ipcRenderer.removeListener('wiz3d:progress', handler);
     },
+    wiz3dListReleases: () => ipcRenderer.invoke('wiz3d:listReleases'),
+    wiz3dPaths:        () => ipcRenderer.invoke('wiz3d:paths'),
+
+    // Settings kept by the main process (wiz3D channel, detailed logging)
+    getSettings: ()       => ipcRenderer.invoke('settings:get'),
+    setSettings: (values) => ipcRenderer.invoke('settings:set', values),
+
+    // Per-game wiz3D version and render path
+    getGamePrefs: (gameId)         => ipcRenderer.invoke('gamePrefs:get', { gameId }),
+    setGamePrefs: (gameId, values) => ipcRenderer.invoke('gamePrefs:set', { gameId, values }),
+
+    // Games outside the catalogue
+    addGameFromExe: ()       => ipcRenderer.invoke('games:addFromExe'),
+    chooseGameExe:  (gameId) => ipcRenderer.invoke('games:chooseExe', { gameId }),
+    removeUserGame: (gameId) => ipcRenderer.invoke('games:removeUser', { gameId }),
+
+    // Logs and reports
+    writeLog:     (level, args) => ipcRenderer.send('log:write', { level, args }),
+    openLogs:     ()    => ipcRenderer.invoke('logs:open'),
+    createReport: (ctx) => ipcRenderer.invoke('report:create', ctx),
+    showItem:     (p)   => ipcRenderer.invoke('shell:showItem', p),
 });
+
+// Uncaught errors in the window go to Stereopticon's log file. (Console
+// lines are forwarded by renderer.js, which owns the page's console.)
+window.addEventListener('error', e =>
+    ipcRenderer.send('log:write', { level: 'error', args: [`${e.message} at ${e.filename}:${e.lineno}`] }));
+window.addEventListener('unhandledrejection', e =>
+    ipcRenderer.send('log:write', { level: 'error', args: ['Unhandled rejection:', String(e.reason?.stack || e.reason)] }));

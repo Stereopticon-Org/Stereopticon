@@ -3,7 +3,13 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 const os   = require('os');
-const { scanGame, scanAllGames } = require('../modules/gameRegistry');
+const { scanGame, scanAllGames, getSteamCommonPaths } = require('../modules/gameRegistry');
+const logger      = require('../modules/logger');
+logger.install();
+const appSettings = require('../modules/appSettings');
+const gamePrefs   = require('../modules/gamePrefs');
+const userGames   = require('../modules/userGames');
+const reporter    = require('../modules/reporter');
 const { execSync } = require('child_process');
 const DATA_DIR     = path.join(__dirname, '..', 'data');
 const BUNDLE_PATH  = path.join(DATA_DIR, '_bundle.json');
@@ -64,8 +70,22 @@ function _readSidebar() {
 function loadAllGames()     { return _readBundle().games     || []; }
 function loadAllPipelines() { return _readBundle().pipelines || []; }
 function loadAllOutputs()   { return _readBundle().outputs   || []; }
-function loadSidebar()      { return _readSidebar(); }
-function loadOneGame(id)    { _readBundle(); return _gameById?.get(id) || null; }
+// The catalogue plus games it does not list: Steam games found on this PC
+// and games the user added by picking an .exe (modules/userGames.js).
+function loadSidebar() {
+    const sb = _readSidebar();
+    let extra = [];
+    try {
+        const known = new Set(sb.games.map(g => String(g.steam_app_id || '')).filter(Boolean));
+        userGames.discoverSteamGames(getSteamCommonPaths(), known);
+        extra = userGames.sidebarRows();
+    } catch (e) { console.warn('[userGames] Steam discovery failed:', e.message); }
+    return { ...sb, games: [...sb.games, ...extra] };
+}
+function loadOneGame(id) {
+    _readBundle();
+    return _gameById?.get(id) || (/^(steam|user)_/.test(String(id)) ? userGames.getOne(id) : null);
+}
 const { installFix, installUEVRProfile, installUE3D, readUEVRConfig, writeUEVRConfig, readVRto3DConfig, writeVRto3DConfig, installVRto3D, isVRto3DInstalled, getVRto3DConfigDir, writeVRto3DGameProfile, getCacheInfo, clearCache } = require('../modules/installer');
 const installManifest = require('../modules/installManifest');
 const { getFullState, applyAndSave, resetToDefaults, snapshotDefaults } = require('../modules/iniEditor');
@@ -164,9 +184,16 @@ ipcMain.handle('install:fix', async (event, { profile, gameId, gamePath, exeName
     const session = (gamePath && fs.existsSync(gamePath)) ? installManifest.begin(profile.id, gamePath) : null;
     try {
         const game = gameId ? loadOneGame(gameId) : null;
+        const prefs = gamePrefs.get(gameId);
+        logger.info('install', `Installing ${profile.id} (${profile.type}) for ${gameId} into ${gamePath}`,
+                    prefs.wiz3dVersion || prefs.wiz3dPath ? JSON.stringify(prefs) : '');
         const result = await installFix(profile, gamePath, (progress) => {
             event.sender.send('install:progress', progress);
-        }, exeName || null, { beforeWrite: session?.beforeWrite, game });
+        }, exeName || game?.exe_name || null, {
+            beforeWrite: session?.beforeWrite, game,
+            wiz3d: { version: prefs.wiz3dVersion || null, path: prefs.wiz3dPath || null },
+        });
+        logger[result.success ? 'info' : 'warn']('install', result.success ? 'Installed' : 'Install failed', result.message || '');
         if (session) installManifest.finish(session, { rollback: !result.success });
         if (result.success) {
             const isPending = ['uevr','ue3d'].includes(profile.type);
@@ -175,12 +202,14 @@ ipcMain.handle('install:fix', async (event, { profile, gameId, gamePath, exeName
                 // Where the files went (next to the exe) and what was installed,
                 // so launch-time config edits find the right folder.
                 ...(result.installDir   ? { installDir:   result.installDir }   : {}),
-                ...(result.wiz3dVersion ? { wiz3dVersion: result.wiz3dVersion, wiz3dVariant: result.variant } : {}),
+                ...(result.wiz3dVersion ? { wiz3dVersion: result.wiz3dVersion, wiz3dVariant: result.variant,
+                                            wiz3dPath: result.wiz3dPath || null } : {}),
             });
         }
         return { success: true, ...result };
     } catch (e) {
         if (session) installManifest.finish(session, { rollback: true });
+        logger.error('install', `Install of ${profile.id} threw:`, e.stack || e.message);
         return { success: false, message: e.message };
     }
 });
@@ -536,6 +565,12 @@ ipcMain.handle('pipeline:execute', async (_, input) => {
 // ── Launch game ───────────────────────────────────────────────
 ipcMain.handle('game:launch', async (_, { exePath }) => {
     if (!exePath) return { success: false, message: 'No executable path provided.' };
+    // The exe may sit in a subfolder of the game folder (Binaries\Win64, bin\x64...).
+    if (!fs.existsSync(exePath)) {
+        const { findGameExe } = require('../modules/installer');
+        exePath = findGameExe(path.dirname(exePath), path.basename(exePath)) || exePath;
+    }
+    logger.info('launch', `Launching ${exePath}`);
     if (!fs.existsSync(exePath)) {
         return { success: false, message: `Executable not found:\n${exePath}\n\nCheck the Game Folder path — it should be the folder containing the game exe.` };
     }
@@ -547,6 +582,7 @@ ipcMain.handle('game:launch', async (_, { exePath }) => {
             shell:    false,
         });
         child.on('error', err => console.error('Launch error:', err));
+        child.on('exit', code => logger.info('launch', `${path.basename(exePath)} exited with code ${code}`));
         child.unref();
         return { success: true };
     } catch (e) {
@@ -765,11 +801,84 @@ ipcMain.handle('wiz3d:status', async (_, { checkOnline = true } = {}) => {
 ipcMain.handle('wiz3d:update', async (event) => {
     try {
         const r = await wiz3dManager.installRelease(null, p => event.sender.send('wiz3d:progress', p));
+        logger.info('wiz3d', `Switched to wiz3D ${r.tag}`);
         return { success: true, tag: r.tag, name: r.name };
     } catch (e) {
+        logger.warn('wiz3d', 'Update failed:', e.message);
         return { success: false, message: e.message };
     }
 });
+ipcMain.handle('wiz3d:listReleases', async () => {
+    const current = (await wiz3dManager.status({ checkOnline: false })).installed;
+    try {
+        return { success: true, releases: await wiz3dManager.listReleases(), downloaded: wiz3dManager.downloadedVersions(), current };
+    } catch (e) {
+        return { success: false, message: e.message, releases: [], downloaded: wiz3dManager.downloadedVersions(), current };
+    }
+});
+ipcMain.handle('wiz3d:paths', () => Object.entries(gamePrefs.WIZ3D_PATHS).map(([key, p]) => ({ key, label: p.label, type: p.type })));
+
+// ── Settings that the main process needs ────────────────────────
+ipcMain.handle('settings:get', () => appSettings.readAll());
+ipcMain.handle('settings:set', (_, values) => {
+    const next = appSettings.set(values || {});
+    logger.setDetailed(next.detailedLogging);
+    logger.info('settings', 'Settings changed:', JSON.stringify(values));
+    return next;
+});
+
+// ── Per-game choices (wiz3D version and render path) ────────────
+ipcMain.handle('gamePrefs:get', (_, { gameId }) => gamePrefs.get(gameId));
+ipcMain.handle('gamePrefs:set', (_, { gameId, values }) => {
+    logger.info('gamePrefs', gameId, JSON.stringify(values));
+    return gamePrefs.set(gameId, values);
+});
+
+// ── Games outside the catalogue ─────────────────────────────────
+async function pickExe(event) {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        title: "Choose the game's .exe",
+        properties: ['openFile'],
+        filters: [{ name: 'Programs', extensions: ['exe'] }],
+    });
+    return canceled ? null : filePaths[0] || null;
+}
+ipcMain.handle('games:addFromExe', async (event) => {
+    const exe = await pickExe(event);
+    if (!exe) return { success: false, canceled: true };
+    try {
+        const game = userGames.addFromExe(exe);
+        logger.info('games', `Added ${game.title} (${exe})`);
+        return { success: true, game, row: userGames.sidebarRows().find(r => r.id === game.id) };
+    } catch (e) { return { success: false, message: e.message }; }
+});
+ipcMain.handle('games:chooseExe', async (event, { gameId }) => {
+    const exe = await pickExe(event);
+    if (!exe) return { success: false, canceled: true };
+    try { return { success: true, game: userGames.setExe(gameId, exe) }; }
+    catch (e) { return { success: false, message: e.message }; }
+});
+ipcMain.handle('games:removeUser', (_, { gameId }) => { userGames.remove(gameId); return { success: true }; });
+
+// ── Logs and reports ────────────────────────────────────────────
+ipcMain.on('log:write', (_, { level, args } = {}) => logger.fromRenderer(level, args));
+ipcMain.handle('logs:open', async () => {
+    fs.mkdirSync(logger.LOG_DIR, { recursive: true });
+    return shell.openPath(logger.LOG_DIR);
+});
+ipcMain.handle('report:create', async (_, ctx) => {
+    try {
+        const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+        const record = ctx?.fixId ? getInstallRecord(ctx.fixId) : null;
+        const r = await reporter.createReport({ ...ctx, record, appVersion: pkg.version });
+        return { success: true, ...r };
+    } catch (e) {
+        logger.error('report', 'Report failed:', e.stack || e.message);
+        return { success: false, message: e.message };
+    }
+});
+ipcMain.handle('shell:showItem', (_, p) => { if (p && fs.existsSync(p)) shell.showItemInFolder(p); return true; });
 
 ipcMain.handle('app:version', () => {
     try {

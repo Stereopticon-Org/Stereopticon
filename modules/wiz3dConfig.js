@@ -291,6 +291,20 @@ const CONFIG_FILE = {
     wiz3d_3dvision_dm: '3DVision_Config.xml',
 };
 
+function configFileForVariant(variant) {
+    if (!variant) return null;
+    if (/^HD3D/i.test(variant))             return 'HD3D_Config.xml';
+    if (/^3D-Vision-Direct/i.test(variant)) return '3DVision_Config.xml';
+    return 'wiz3D_Config.xml';
+}
+
+// Each path has its own switches; whichever the file has are set.
+const DETAILED_LOGGING_PATCHES = [
+    { kind: 'attr', tag: 'LoggingEnabled',          attr: 'Value', value: 1, optional: true },  // 3D Vision Direct
+    { kind: 'attr', tag: 'VerboseLogging',          attr: 'Value', value: 1, optional: true },  // 3D Vision Direct
+    { kind: 'attr', tag: 'CollectDebugInformation', attr: 'Value', value: 1, optional: true },  // DX10/11 injector
+];
+
 /**
  * Write the launch-time settings (output mode, enable, tuning) into the
  * config file of an installed wiz3D fix. The file sits next to the game's
@@ -300,17 +314,20 @@ function applyLaunchConfig(ctx) {
     const path = require('path');
     const { fix, outputId, gameContext, userOverrides } = ctx;
     const result = { success: true, applied: [], errors: [], warnings: [] };
-    const configFile = CONFIG_FILE[fix?.type];
+    const { getInstallRecord } = require('./installState');
+    const record = getInstallRecord(fix?.id);
+    // The game page can install a different render path from the catalogue's,
+    // so the installed variant decides which config file to edit.
+    const configFile = configFileForVariant(record?.wiz3dVariant) || CONFIG_FILE[fix?.type];
     if (!configFile) return result;
     if (!gameContext?.gamePath) {
         result.warnings.push(`${fix.type}: skipped, no game folder`);
         return result;
     }
 
-    const { getInstallRecord } = require('./installState');
     const { findGameExe } = require('./installer');
     const candidates = [
-        getInstallRecord(fix.id)?.installDir,
+        record?.installDir,
         (() => { const exe = findGameExe(gameContext.gamePath, gameContext.exeName); return exe && path.dirname(exe); })(),
         gameContext.gamePath,
     ].filter(Boolean);
@@ -324,7 +341,10 @@ function applyLaunchConfig(ctx) {
     if (outputId && outputMode === undefined) {
         result.warnings.push(`wiz3D has no output mode for "${outputId}"; leaving the configured mode unchanged`);
     }
-    const r = applyPatches(xmlPath, buildPatches({ outputMode, userOverrides: userOverrides?.wiz3d || {} }));
+    const patches = buildPatches({ outputMode, userOverrides: userOverrides?.wiz3d || {} });
+    // Settings → Detailed logging: switch on wiz3D's own diagnostics too.
+    if (require('./appSettings').get('detailedLogging')) patches.push(...DETAILED_LOGGING_PATCHES);
+    const r = applyPatches(xmlPath, patches);
     if (r.success === false) result.success = false;
     result.applied .push(...r.applied);
     result.errors  .push(...r.errors);
@@ -343,5 +363,6 @@ module.exports = {
     OUTPUT_MODE,
     CONFIG_FILE,
     outputModeFor,
+    configFileForVariant,
     applyLaunchConfig,
 };

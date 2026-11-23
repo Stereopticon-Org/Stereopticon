@@ -38,7 +38,24 @@ You do not need Node.js, git or any other developer tools to use these builds.
 
 To remove wiz3D from a game, use the bin button on the game page. It deletes only the files that were added and puts back any game files that were replaced.
 
-Settings → wiz3D shows which wiz3D version you have and offers new releases. After updating, a game set up with the older version shows **Update wiz3D here**.
+Settings → wiz3D shows which wiz3D version you have and offers new releases. Tick **Use wiz3D beta releases** to be offered pre-releases too. After updating, a game set up with the older version shows **Switch wiz3D here**.
+
+On each game page you can override two things for that game only:
+
+- **wiz3D version**: keep the game on a particular release (0.4.0 or later) whatever Settings says.
+- **Render path**: install a different part of wiz3D from the recommended one, for example the DX10/11 Stereo Injector or 3D Vision Direct instead of AMD HD3D for Deus Ex: Human Revolution.
+
+Changing either on an installed game turns the install button into **Reinstall**.
+
+### Games that are not in the list
+
+The library also shows every Steam game installed on your PC, and any game you add with the **+** button (pick its .exe). Games without a wiz3D entry get an untested wiz3D fix; Stereopticon reads the .exe to pick the injector, and you can choose another render path or a different .exe on the game page.
+
+### Reports and logs
+
+**Report a result** on a game page (or **Report a problem** in Settings) saves a zip with a short report, your system details, Stereopticon's log and the wiz3D logs and config from the game folder, then opens a pre-filled GitHub issue for you to check, attach the zip to and submit. Nothing is sent without you submitting it.
+
+Stereopticon always logs errors, installs and launches to `%USERPROFILE%\.stereopticon\logs` (kept for 14 days). **Detailed logging** in Settings logs everything and also switches on wiz3D's own diagnostic logging at launch.
 
 ### Output modes
 

@@ -18,6 +18,7 @@ const http  = require('http');
 const os    = require('os');
 const peInfo       = require('./peInfo');
 const wiz3dManager = require('./wiz3dManager');
+const gamePrefs    = require('./gamePrefs');
 
 // ZIP support
 let AdmZip;
@@ -293,7 +294,8 @@ async function installFix(profile, gamePath, onProgress = () => {}, exeName = nu
 
     // ── Case E: wiz3D variants — copy staged wiz3D files into game folder ─
     if (typeof profile.type === 'string' && profile.type.startsWith('wiz3d')) {
-        return await installWiz3D(profile, gamePath, exeName || '', onProgress, hooks.beforeWrite, hooks.game || null);
+        return await installWiz3D(profile, gamePath, exeName || '', onProgress, hooks.beforeWrite, hooks.game || null,
+                                  hooks.wiz3d || {});
     }
 
     // ── Case F: no download ───────────────────────────────────
@@ -386,7 +388,8 @@ function resolveWiz3DTarget(profile, game, pe) {
             if (api === 'dx10-11') return { rel: ['Stereo-Injector', 'DX10-11', bits], api, arch, sources };
             return { error: api
                 ? `wiz3D's stereo injector does not support ${api.toUpperCase()} games yet.`
-                : `Could not tell which graphics API this game uses, so wiz3D cannot pick its files.` };
+                : `Could not tell which graphics API this game uses, so wiz3D cannot pick its files. ` +
+                  `Choose a render path (for example Stereo Injector DX10/11) on the game page and install again.` };
         case 'wiz3d_hd3d':
             return { rel: ['HD3D', bits], api, arch, sources };
         case 'wiz3d_opengl':
@@ -404,20 +407,28 @@ function resolveWiz3DTarget(profile, game, pe) {
     }
 }
 
-async function installWiz3D(profile, gamePath, exeName, onProgress, beforeWrite, game = null) {
+/**
+ * choice: { version, path } from the game page. version pins a wiz3D release
+ * tag (default: the current one); path picks a render path from
+ * gamePrefs.WIZ3D_PATHS instead of the catalogue's.
+ */
+async function installWiz3D(profile, gamePath, exeName, onProgress, beforeWrite, game = null, choice = {}) {
     onProgress({ stage: 'preflight', status: 'start', percent: 5, message: 'Getting wiz3D…' });
 
     let wiz;
     try {
-        wiz = await wiz3dManager.ensureInstalled(p =>
-            onProgress({ stage: 'download', status: p.stage, percent: Math.round(5 + (p.percent || 0) * 0.6), message: p.message }));
+        const progress = p =>
+            onProgress({ stage: 'download', status: p.stage, percent: Math.round(5 + (p.percent || 0) * 0.6), message: p.message });
+        wiz = choice.version
+            ? await wiz3dManager.ensureVersion(choice.version, progress)
+            : await wiz3dManager.ensureInstalled(progress);
     } catch (e) {
         return { success: false, message: `Could not download wiz3D:\n${e.message}` };
     }
 
     const exePath = findGameExe(gamePath, exeName || game?.exe_name);
     const pe = exePath ? peInfo.readPe(exePath) : null;
-    const target = resolveWiz3DTarget(profile, game, pe);
+    const target = resolveWiz3DTarget(gamePrefs.applyWiz3DPath(profile, choice.path), game, pe);
     if (target.error) return { success: false, message: target.error };
 
     const srcDir = path.join(wiz.dir, ...target.rel);
@@ -457,6 +468,7 @@ async function installWiz3D(profile, gamePath, exeName, onProgress, beforeWrite,
         installDir: destDir,
         wiz3dVersion: wiz.tag,
         variant: target.rel.join('/'),
+        wiz3dPath: choice.path || null,
         arch: target.arch,
         api: target.api,
         message: `wiz3D ${wiz.tag} (${target.rel.join(' / ')}) installed to:\n${destDir}` +

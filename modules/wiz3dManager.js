@@ -8,8 +8,11 @@
  *   versions/<tag>/      one extracted release, without its top "wiz3D/" folder
  *   current.json         { tag, name, installedAt } of the version in use
  *
- * The two most recent versions are kept, so a broken new release can be
- * rolled back by editing current.json.
+ * The two most recent versions are kept, plus any version a game is pinned
+ * to, so a game page's choice is never deleted from under it.
+ *
+ * Channels: 'stable' follows the newest full release; 'beta' also accepts
+ * pre-releases. Settings → wiz3D sets the channel (modules/appSettings.js).
  */
 
 const fs     = require('fs');
@@ -17,6 +20,8 @@ const path   = require('path');
 const https  = require('https');
 const AdmZip = require('adm-zip');
 const { toolDir } = require('./appPaths');
+const appSettings = require('./appSettings');
+const gamePrefs   = require('./gamePrefs');
 
 const REPO       = 'Stereopticon-Org/wiz3D';
 const USER_AGENT = 'Stereopticon';
@@ -76,19 +81,67 @@ async function fetchJson(url) {
     return JSON.parse(body);
 }
 
-/** Latest published release: { tag, name, publishedAt, assetName, assetUrl, size }. */
-async function getLatestRelease() {
-    const rel = await fetchJson(`https://api.github.com/repos/${REPO}/releases/latest`);
-    const asset = (rel.assets || []).find(a => /\.zip$/i.test(a.name));
-    if (!asset) throw new Error(`wiz3D release ${rel.tag_name} has no .zip download`);
+function toRelease(rel) {
+    const asset = (rel.assets || []).find(x => /\.zip$/i.test(x.name));
+    if (!asset) return null;
     return {
         tag:         rel.tag_name,
         name:        rel.name || rel.tag_name,
+        prerelease:  !!rel.prerelease,
         publishedAt: rel.published_at,
         assetName:   asset.name,
         assetUrl:    asset.browser_download_url,
         size:        asset.size,
     };
+}
+
+// Releases before 0.4.0 use another folder layout and output numbering,
+// which this version of Stereopticon does not drive.
+const MIN_VERSION = [0, 4, 0];
+function versionOf(tag) {
+    const m = /(\d+)\.(\d+)(?:\.(\d+))?/.exec(String(tag));
+    return m ? [+m[1], +m[2], +(m[3] || 0)] : null;
+}
+function isSupported(tag) {
+    const v = versionOf(tag);
+    if (!v) return false;
+    for (let i = 0; i < 3; i++) if (v[i] !== MIN_VERSION[i]) return v[i] > MIN_VERSION[i];
+    return true;
+}
+
+// The release list changes rarely; one request per ten minutes keeps well
+// inside GitHub's 60 requests an hour for anonymous clients.
+const LIST_TTL_MS = 10 * 60 * 1000;
+let _listCache = null;
+
+/** Every published release with a .zip, newest first. */
+async function listReleases({ fresh = false } = {}) {
+    if (!fresh && _listCache && Date.now() - _listCache.at < LIST_TTL_MS) return _listCache.list;
+    const raw = await fetchJson(`https://api.github.com/repos/${REPO}/releases?per_page=50`);
+    const list = (Array.isArray(raw) ? raw : [])
+        .filter(r => !r.draft)
+        .map(toRelease).filter(r => r && isSupported(r.tag))
+        .sort((x, y) => String(y.publishedAt).localeCompare(String(x.publishedAt)));
+    _listCache = { at: Date.now(), list };
+    return list;
+}
+
+function channel() {
+    return appSettings.get('wiz3dChannel') === 'beta' ? 'beta' : 'stable';
+}
+
+/** Newest release on the channel: { tag, name, prerelease, publishedAt, assetName, assetUrl, size }. */
+async function getLatestRelease({ channel: ch = channel() } = {}) {
+    const list = await listReleases();
+    const rel = ch === 'beta' ? list[0] : list.find(r => !r.prerelease);
+    if (!rel) throw new Error('No wiz3D release with a .zip download was found');
+    return rel;
+}
+
+async function getRelease(tag) {
+    const rel = (await listReleases()).find(r => r.tag === tag);
+    if (!rel) throw new Error(`wiz3D ${tag} is not a published release`);
+    return rel;
 }
 
 async function download(url, dest, size, onProgress) {
@@ -128,12 +181,13 @@ function extractRelease(zipPath, destDir) {
 }
 
 function pruneOldVersions(keepTag) {
+    const pinned = new Set(gamePrefs.pinnedWiz3DVersions());
     let dirs;
     try { dirs = fs.readdirSync(versionsDir(), { withFileTypes: true }).filter(d => d.isDirectory()); }
     catch { return; }
     const byAge = dirs
         .map(d => ({ name: d.name, mtime: fs.statSync(path.join(versionsDir(), d.name)).mtimeMs }))
-        .filter(d => d.name !== keepTag && !d.name.endsWith('.partial'))
+        .filter(d => d.name !== keepTag && !d.name.endsWith('.partial') && !pinned.has(d.name))
         .sort((a, b) => b.mtime - a.mtime);
     for (const d of byAge.slice(KEEP_VERSIONS - 1)) {
         fs.rmSync(path.join(versionsDir(), d.name), { recursive: true, force: true });
@@ -141,10 +195,11 @@ function pruneOldVersions(keepTag) {
 }
 
 /**
- * Download and switch to a release (the latest when none is given).
+ * Download a release (the newest on the channel when none is given) and,
+ * unless makeCurrent is false, switch to it.
  * onProgress receives { stage: 'check'|'download'|'extract'|'done', percent, message }.
  */
-async function installRelease(release = null, onProgress = () => {}) {
+async function installRelease(release = null, onProgress = () => {}, { makeCurrent = true } = {}) {
     onProgress({ stage: 'check', percent: 0, message: 'Checking the latest wiz3D release…' });
     const rel = release || await getLatestRelease();
 
@@ -166,10 +221,12 @@ async function installRelease(release = null, onProgress = () => {}) {
         }
     }
 
-    fs.writeFileSync(currentFile(), JSON.stringify({
-        tag: rel.tag, name: rel.name, installedAt: new Date().toISOString(),
-    }, null, 2));
-    pruneOldVersions(rel.tag);
+    if (makeCurrent || !readCurrent()) {
+        fs.writeFileSync(currentFile(), JSON.stringify({
+            tag: rel.tag, name: rel.name, prerelease: !!rel.prerelease, installedAt: new Date().toISOString(),
+        }, null, 2));
+        pruneOldVersions(rel.tag);
+    }
     onProgress({ stage: 'done', percent: 100, message: `wiz3D ${rel.tag} ready` });
     return { tag: rel.tag, name: rel.name, dir: finalDir };
 }
@@ -177,6 +234,24 @@ async function installRelease(release = null, onProgress = () => {}) {
 /** Installed wiz3D, downloading the latest release first if there is none. */
 async function ensureInstalled(onProgress) {
     return readCurrent() || installRelease(null, onProgress);
+}
+
+/**
+ * A specific release, downloaded if it is not here yet. The current version
+ * is left alone. Returns { tag, name, dir }.
+ */
+async function ensureVersion(tag, onProgress = () => {}) {
+    const dir = path.join(versionsDir(), tag);
+    if (fs.existsSync(dir)) return { tag, name: tag, dir };
+    return installRelease(await getRelease(tag), onProgress, { makeCurrent: false });
+}
+
+/** Tags that are downloaded, current or not. */
+function downloadedVersions() {
+    try {
+        return fs.readdirSync(versionsDir(), { withFileTypes: true })
+            .filter(d => d.isDirectory() && !d.name.endsWith('.partial')).map(d => d.name);
+    } catch { return []; }
 }
 
 /**
@@ -190,13 +265,16 @@ async function status({ checkOnline = true } = {}) {
         try { latest = await getLatestRelease(); }
         catch (e) { error = e.message; }
     }
-    const info = installed && { tag: installed.tag, name: installed.name, installedAt: installed.installedAt };
+    const info = installed && { tag: installed.tag, name: installed.name, prerelease: !!installed.prerelease,
+                                installedAt: installed.installedAt };
     return {
         installed: info || null,
         latest,
+        channel: channel(),
         updateAvailable: !!(latest && (!installed || installed.tag !== latest.tag)),
         error,
     };
 }
 
-module.exports = { currentDir, getLatestRelease, installRelease, ensureInstalled, status, extractRelease };
+module.exports = { currentDir, listReleases, getLatestRelease, getRelease, installRelease, ensureInstalled,
+                   ensureVersion, downloadedVersions, status, extractRelease, channel, isSupported };

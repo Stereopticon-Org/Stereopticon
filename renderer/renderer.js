@@ -1,6 +1,24 @@
 //
 
 // renderer.js — full integrated version with ReShade support
+
+// Copy console lines into Stereopticon's log file. The main process keeps
+// warnings and errors always and the rest only with detailed logging on.
+(() => {
+    const toText = a => {
+        if (a instanceof Error) return a.stack || a.message;
+        if (typeof a === 'string') return a;
+        try { return JSON.stringify(a); } catch { return String(a); }
+    };
+    for (const level of ['log', 'info', 'warn', 'error']) {
+        const orig = console[level].bind(console);
+        console[level] = (...args) => {
+            orig(...args);
+            try { window.api?.writeLog?.(level, args.map(a => toText(a).slice(0, 4000))); } catch { /* window closing */ }
+        };
+    }
+})();
+
 function safeGetEl(id) {
     const el = document.getElementById(id);
     if (!el) console.warn(`Missing DOM element: ${id}`);
@@ -924,22 +942,143 @@ function updateBottomBar() {
 
 // A game set up with an older wiz3D keeps those files. When a newer wiz3D
 // has been downloaded, turn the Install button into "Update wiz3D here".
+// The same happens when the game page's version or render path choice no
+// longer matches what is installed.
 async function offerWiz3DUpdateHere(fixId) {
     try {
-        const [record, st] = await Promise.all([
+        const gameId = selectedGame?.id;
+        const [record, st, prefs] = await Promise.all([
             window.api.getInstallRecord(fixId),
             window.api.wiz3dStatus({ checkOnline: false }),
+            window.api.getGamePrefs(gameId),
         ]);
-        const current = st?.installed?.tag;
+        const wanted = prefs?.wiz3dVersion || st?.installed?.tag;
         const btn = document.getElementById('btnInstallFix');
-        if (!btn || selectedProfile?.id !== fixId || !current || !record?.wiz3dVersion) return;
-        if (record.wiz3dVersion === current) return;
-        btn.textContent = `⇧ Update wiz3D here (${record.wiz3dVersion} → ${current})`;
+        if (!btn || selectedProfile?.id !== fixId || selectedGame?.id !== gameId || !record?.wiz3dVersion) return;
+        const pathChanged    = (record.wiz3dPath || '') !== (prefs?.wiz3dPath || '');
+        const versionChanged = !!wanted && record.wiz3dVersion !== wanted;
+        if (!pathChanged && !versionChanged) return;
+        btn.textContent = pathChanged
+            ? '⟳ Reinstall wiz3D with the chosen path'
+            : `⇧ Switch wiz3D here (${record.wiz3dVersion} → ${wanted})`;
         btn.className   = 'hero-btn hero-btn-secondary';
         btn.disabled    = false;
         btn.onclick     = reinstallWiz3DHere;
     } catch { /* leave the button as it is */ }
 }
+
+// ── Per-game wiz3D version and render path ───────────────────────
+let _wiz3dReleases = null;    // { releases, downloaded, current } from the main process
+let _wiz3dPathList = null;    // [{ key, label, type }]
+
+// The render path the catalogue's fix stands for, as a WIZ3D_PATHS key.
+function recommendedWiz3DPathKey(fix, game) {
+    const api = String(fix?.wiz3d_api_raw || game?.graphics_api || '').toLowerCase();
+    switch (fix?.type) {
+        case 'wiz3d_hd3d':        return 'hd3d';
+        case 'wiz3d_opengl':      return 'opengl';
+        case 'wiz3d_3dvision_dm': return /9/.test(api) && !/1[01]/.test(api) ? '3dv-dx9' : /10/.test(api) && !/11/.test(api) ? '3dv-dx10' : '3dv-dx11';
+        default:
+            if (/1[01]|12/.test(api)) return 'injector-dx11';
+            if (/9/.test(api))        return 'injector-dx9';
+            if (/8/.test(api))        return 'injector-dx8';
+            if (/7|ddraw/.test(api))  return 'injector-dx7';
+            if (/opengl|ogl/.test(api)) return 'opengl';
+            return null;
+    }
+}
+
+function wiz3dOptionsHtml() {
+    if (!selectedProfile || !isWiz3DType(selectedProfile.type)) return '';
+    const exeBtn = selectedGame?.user_game || /^(steam|user)_/.test(selectedGame?.id || '')
+        ? `<button class="link-btn" onclick="chooseExeForGame()" title="${selectedGame.exe_name || 'No .exe found yet'}">Choose .exe</button>` : '';
+    const removeBtn = /^user_/.test(selectedGame?.id || '')
+        ? `<button class="link-btn" onclick="removeUserGame()">Remove from library</button>` : '';
+    return `
+        <div id="wiz3dGameOptions" class="profile-selector" style="display:grid;gap:14px;align-items:end;margin-top:10px;">
+            <div>
+                <label title="Settings decides the default. Pick a version here to keep this game on it.">wiz3D version</label>
+                <select id="wiz3dVersionSelect" class="csel-target" style="margin-top:0;width:100%;" onchange="onWiz3DVersionChange(this.value)">
+                    <option value="">Loading…</option>
+                </select>
+            </div>
+            <div>
+                <label title="Which part of wiz3D is installed. The recommended path is the one wiz3D's list gives for this game.">Render path</label>
+                <select id="wiz3dPathSelect" class="csel-target" style="margin-top:0;width:100%;" onchange="onWiz3DPathChange(this.value)">
+                    <option value="">Loading…</option>
+                </select>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;height:34px;">
+                ${exeBtn}${removeBtn}
+                <button class="link-btn" style="border-color:var(--teal-border);color:var(--teal);" onclick="openReportModal('game')">Report a result</button>
+            </div>
+        </div>`;
+}
+
+async function loadWiz3DGameOptions() {
+    const vSel = document.getElementById('wiz3dVersionSelect');
+    const pSel = document.getElementById('wiz3dPathSelect');
+    if (!vSel || !pSel) return;
+    const gameId = selectedGame.id, fixId = selectedProfile.id;
+    const [prefs, rel, paths] = await Promise.all([
+        window.api.getGamePrefs(gameId),
+        _wiz3dReleases ? Promise.resolve(_wiz3dReleases) : window.api.wiz3dListReleases(),
+        _wiz3dPathList ? Promise.resolve(_wiz3dPathList) : window.api.wiz3dPaths(),
+    ]);
+    if (rel?.success) _wiz3dReleases = rel;
+    _wiz3dPathList = paths;
+    if (selectedGame?.id !== gameId || selectedProfile?.id !== fixId) return;
+
+    // Versions: default (Settings) first, then every supported release.
+    const current = rel?.current?.tag;
+    const downloaded = new Set(rel?.downloaded || []);
+    const releases = rel?.releases?.length ? rel.releases
+                   : [...downloaded].map(tag => ({ tag, prerelease: false }));   // offline
+    if (prefs.wiz3dVersion && !releases.some(r => r.tag === prefs.wiz3dVersion)) releases.push({ tag: prefs.wiz3dVersion });
+    vSel.innerHTML = `<option value="">Default${current ? ` (${current})` : ''}, set in Settings</option>` +
+        releases.map(r => `<option value="${r.tag}" ${r.tag === prefs.wiz3dVersion ? 'selected' : ''}>` +
+            `${r.tag}${r.prerelease ? ' (beta)' : ''}${downloaded.has(r.tag) ? '' : ' (will download)'}</option>`).join('');
+    if (!rel?.success && rel?.message) vSel.title = `Could not list wiz3D releases: ${rel.message}`;
+
+    // Render paths: the recommended one first.
+    const rec = recommendedWiz3DPathKey(selectedProfile, selectedGame);
+    const recLabel = paths.find(p => p.key === rec)?.label || 'automatic';
+    pSel.innerHTML = `<option value="">Recommended: ${recLabel}</option>` +
+        paths.filter(p => p.key !== rec).map(p =>
+            `<option value="${p.key}" ${p.key === prefs.wiz3dPath ? 'selected' : ''}>${p.label}</option>`).join('');
+}
+
+window.onWiz3DVersionChange = async function(tag) {
+    await window.api.setGamePrefs(selectedGame.id, { wiz3dVersion: tag || null });
+    if (installedFixIds.has(selectedProfile.id)) offerWiz3DUpdateHere(selectedProfile.id);
+};
+window.onWiz3DPathChange = async function(key) {
+    await window.api.setGamePrefs(selectedGame.id, { wiz3dPath: key || null });
+    if (installedFixIds.has(selectedProfile.id)) offerWiz3DUpdateHere(selectedProfile.id);
+};
+
+window.chooseExeForGame = async function() {
+    const r = await window.api.chooseGameExe(selectedGame.id);
+    if (!r?.success) { if (r?.message) showResult(false, r.message); return; }
+    Object.assign(selectedGame, r.game, { _tryFix: null });
+    setInstallPath(r.game.install_dir || getInstallPath());
+    _continueSelectGame(selectedGame);
+};
+window.removeUserGame = async function() {
+    if (!confirm(`Remove ${selectedGame.title} from the library? The game itself is not touched.`)) return;
+    await window.api.removeUserGame(selectedGame.id);
+    gamesData = gamesData.filter(g => g.id !== selectedGame.id);
+    selectedGame = null;
+    renderSidebar(gamesData);
+};
+window.addGameFromExe = async function() {
+    const r = await window.api.addGameFromExe();
+    if (!r?.success) { if (r?.message) showResult(false, r.message); return; }
+    let row = gamesData.find(g => g.id === r.game.id);
+    if (!row) { row = r.row || { ...r.game, user_game: true, fix_types: [] }; gamesData.push(row); }
+    renderSidebar(gamesData);
+    selectGame(row);
+};
 
 async function reinstallWiz3DHere() {
     const gamePath = getInstallPath();
@@ -2099,10 +2238,13 @@ function filterAndSortGames(games) {
     let filtered = src.filter(game => {
         if (!game || typeof game.title !== 'string') return false;
         if (hidden.has(game.id)) return false;
-        // wiz3D-only mode: just the games wiz3D has an entry for.
-        if (!showOtherTools && !(game.fix_types || []).some(isWiz3DType)) return false;
-        if (!showVrOnly && game.is_vr_only) return false;
-        if (!showDeprecated && game.is_deprecated_only) return false;
+        // wiz3D-only mode: the games wiz3D has an entry for, plus every game
+        // found on this PC (catalogue or not), which can try wiz3D untested.
+        const onThisPc = !!(game.user_game || window._scannedPaths?.[game.id]);
+        if (!showOtherTools && !(game.fix_types || []).some(isWiz3DType) && !onThisPc) return false;
+        const tryable = !showOtherTools && onThisPc;
+        if (!showVrOnly && game.is_vr_only && !tryable) return false;
+        if (!showDeprecated && game.is_deprecated_only && !tryable) return false;
         if (!game.title.toLowerCase().includes(searchTerm.toLowerCase())) return false;
         if (filterMode === 'installed' && !installedGameIds.has(game.id)) return false;
         // Excluded filters: game is hidden if ANY excluded predicate matches.
@@ -2937,8 +3079,8 @@ function _continueSelectGame(game) {
     // since the installPath input now lives inside the detail-view innerHTML.
     const savedPaths  = loadSavedGamePaths();
     const savedPath   = savedPaths[game.id];
-    const scannedPath = window._scannedPaths?.[game.id];
-    const defaultPath = game.default_path.replace(/[/\\][^/\\]+\.\w+$/i, '');
+    const scannedPath = window._scannedPaths?.[game.id] || game.install_dir || '';
+    const defaultPath = String(game.default_path || '').replace(/[/\\][^/\\]+\.\w+$/i, '');
     setInstallPath(savedPath || scannedPath || defaultPath);
 
     updateBottomBar();
@@ -3181,6 +3323,7 @@ function renderDetailView() {
                     </div>
                 </div>
             </div>
+            ${wiz3dOptionsHtml()}
         </div>
         <span id="metaHeadtracking" style="display:none;"></span>
         <div class="info-grid">
@@ -3207,6 +3350,7 @@ function renderDetailView() {
         </div>`;
     updateConfigBar();
     customizeAllPendingSelects();   // hero & fix-profile select were just rebuilt
+    loadWiz3DGameOptions().catch(e => console.warn('[wiz3D options]', e));
 }
 
 window.switchProfile = fixId => { selectedProfile = visibleFixes(selectedGame).find(f=>f.id===fixId) || selectedProfile; renderDetailView(); updateBottomBar(); loadReshadeStatus(); updateHeadtrackingUI(); };
@@ -4012,7 +4156,89 @@ window.openSettingsModal = async function() {
         const el = document.getElementById('settingsVersion');
         if (el && info?.version) el.textContent = `v${info.version}`;
     } catch {}
+    try {
+        const s = await window.api.getSettings();
+        const beta = document.getElementById('wiz3dBetaToggle');
+        const log  = document.getElementById('detailedLoggingToggle');
+        if (beta) beta.checked = s.wiz3dChannel === 'beta';
+        if (log)  log.checked  = !!s.detailedLogging;
+    } catch {}
     switchSettingsTab('display');
+};
+
+window.toggleWiz3DBeta = async function(on) {
+    await window.api.setSettings({ wiz3dChannel: on ? 'beta' : 'stable' });
+    _wiz3dReleases = null;
+    refreshWiz3DStatus();
+};
+window.toggleDetailedLogging = async function(on) {
+    await window.api.setSettings({ detailedLogging: !!on });
+};
+
+// ── Report a result (game page) or a problem (Settings) ──────────
+let _reportKind = 'game';
+window.openReportModal = function(kind = 'game') {
+    _reportKind = kind === 'app' ? 'app' : 'game';
+    const isGame = _reportKind === 'game' && selectedGame;
+    if (_reportKind === 'game' && !selectedGame) _reportKind = 'app';
+    document.getElementById('reportTitle').textContent = isGame ? 'Report a result' : 'Report a problem';
+    document.getElementById('reportSubtitle').textContent = isGame
+        ? `${selectedGame.title} · ${selectedProfile?.name || ''}`
+        : 'A problem with Stereopticon itself';
+    document.getElementById('reportOutcomeBlock').style.display = isGame ? '' : 'none';
+    document.querySelectorAll('input[name="reportOutcome"]').forEach(r => { r.checked = false; });
+    document.getElementById('reportNotes').value = '';
+    document.getElementById('reportIncludeLogs').checked = true;
+    document.getElementById('reportStatus').innerHTML = '';
+    const btn = document.getElementById('reportCreateBtn');
+    btn.disabled = false; btn.textContent = 'Create report';
+    document.getElementById('reportModal').style.display = 'flex';
+};
+window.closeReportModal = function() {
+    document.getElementById('reportModal').style.display = 'none';
+};
+window.submitReport = async function() {
+    const status = document.getElementById('reportStatus');
+    const btn = document.getElementById('reportCreateBtn');
+    const outcome = document.querySelector('input[name="reportOutcome"]:checked')?.value || '';
+    const notes = document.getElementById('reportNotes').value;
+    if (_reportKind === 'game' && !outcome) {
+        status.innerHTML = '<span style="color:var(--warn);">Pick how it went first.</span>';
+        return;
+    }
+    if (_reportKind === 'app' && !notes.trim()) {
+        status.innerHTML = '<span style="color:var(--warn);">Describe the problem first.</span>';
+        return;
+    }
+    btn.disabled = true; btn.textContent = 'Creating…';
+    status.textContent = 'Collecting logs and system details…';
+    const isGame = _reportKind === 'game';
+    const r = await window.api.createReport({
+        kind:  _reportKind,
+        outcome, notes,
+        includeLogs: document.getElementById('reportIncludeLogs').checked,
+        game:  isGame ? { id: selectedGame.id, title: selectedGame.title, exe: selectedGame.exe_name || '' } : null,
+        fix:   isGame && selectedProfile ? { id: selectedProfile.id, name: selectedProfile.name, type: selectedProfile.type } : null,
+        fixId: isGame ? selectedProfile?.id : null,
+        display: isGame ? (document.getElementById('displayLabelInline')?.textContent || selectedDisplay || '') : '',
+        output:  isGame ? (getEffectiveOutputIdFromSelects?.() || '') : '',
+    });
+    if (!r?.success) {
+        status.innerHTML = `<span style="color:var(--danger);">Could not create the report: ${r?.message || 'unknown error'}</span>`;
+        btn.disabled = false; btn.textContent = 'Try again';
+        return;
+    }
+    btn.textContent = 'Created';
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    status.innerHTML = `
+        <div style="color:var(--teal);margin-bottom:6px;">Report saved: ${esc(r.zipPath)}</div>
+        <div style="color:var(--text-secondary);margin-bottom:8px;">Next: open the GitHub issue, drag the zip into it, check the text and submit. You need a free GitHub account.</div>
+        <div style="display:flex;gap:8px;">
+            <button class="modal-cancel" id="reportOpenIssue">Open GitHub issue</button>
+            <button class="modal-cancel" id="reportShowZip">Show the zip</button>
+        </div>`;
+    document.getElementById('reportOpenIssue').onclick = () => window.api.openUrl(r.issueUrl);
+    document.getElementById('reportShowZip').onclick   = () => window.api.showItem(r.zipPath);
 };
 
 window.closeSettingsModal = function() {
@@ -4069,7 +4295,38 @@ function applyToolMode() {
 applyToolMode();
 function visibleFixes(game) {
     const fixes = Array.isArray(game?.fixes) ? game.fixes : [];
-    return isShowOtherTools() ? fixes : fixes.filter(f => isWiz3DType(f.type));
+    const shown = isShowOtherTools() ? fixes : fixes.filter(f => isWiz3DType(f.type));
+    // Any game without a wiz3D entry can still try wiz3D: offer an untested
+    // fix whose render path comes from the game's .exe (or the game page).
+    if (game && !fixes.some(f => isWiz3DType(f.type))) shown.push(tryWiz3DFix(game));
+    return shown;
+}
+function tryWiz3DFix(game) {
+    if (!game._tryFix) {
+        game._tryFix = {
+            id:          `${game.id}__wiz3d_try`,
+            name:        'wiz3D (untested)',
+            type:        'wiz3d_wrapper',
+            cost:        'free',
+            authors:     ['effcol', 'iZ3D (original)', 'bo3b (open-source release)'],
+            url:         'https://github.com/Stereopticon-Org/wiz3D',
+            license:     'LGPL-2.1',
+            recommended: !(game.fixes || []).length,
+            rendering_method: 'Automatic Stereo Injection',
+            wiz3d_status: 'untested',
+            wiz3d_bits:  game.cpu_architecture || '',
+            native_outputs: ['sbs', 'sbs_half', 'tab', 'tab_half', 'anaglyph', 'interlaced', 'sr_weave'],
+            pipeline_overrides: {},
+            try_fix:     true,
+            pros:        'Nobody has reported on this game with wiz3D yet. Stereopticon picks the stereo injector ' +
+                         'from the game\'s graphics API; choose another render path below if it does not work.',
+            notes:       'Please use Report a result after trying it, so the next person knows what to expect.',
+        };
+    }
+    return game._tryFix;
+}
+function isTryOnlyGame(row) {
+    return !!row?.user_game || !(row?.fix_types || []).some(isWiz3DType);
 }
 window.toggleShowOtherTools = function(on) {
     try { localStorage.setItem(SHOW_OTHER_TOOLS_KEY, on ? 'true' : 'false'); } catch {}
@@ -4236,7 +4493,7 @@ async function refreshWiz3DStatus({ notifyUpdate = false } = {}) {
 
     if (text) {
         text.textContent = st.installed
-            ? `wiz3D ${st.installed.tag} installed`
+            ? `wiz3D ${st.installed.tag}${st.installed.prerelease ? ' (beta)' : ''} installed`
             : 'wiz3D is not downloaded yet';
     }
     if (sub) {
@@ -4250,7 +4507,9 @@ async function refreshWiz3DStatus({ notifyUpdate = false } = {}) {
     }
     if (btn) {
         btn.style.display = st.updateAvailable ? '' : 'none';
-        btn.textContent   = st.installed ? `Update to ${st.latest?.tag}` : 'Download now';
+        btn.textContent   = !st.installed ? 'Download now'
+                          : st.installed.prerelease && st.channel === 'stable' ? `Switch to ${st.latest?.tag}`
+                          : `Update to ${st.latest?.tag}${st.latest?.prerelease ? ' (beta)' : ''}`;
         btn.disabled = false;
     }
     if (notifyUpdate && st.updateAvailable && st.installed) {

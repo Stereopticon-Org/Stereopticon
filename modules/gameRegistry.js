@@ -339,4 +339,4 @@ async function scanAllGames(targets) {
     return results;
 }
 
-module.exports = { scanGame, scanAllGames, folderMatches };
+module.exports = { scanGame, scanAllGames, folderMatches, getSteamCommonPaths };

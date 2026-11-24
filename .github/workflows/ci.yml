@@ -22,3 +22,12 @@ jobs:
       - run: npm test
       - name: Build the catalogue bundle
         run: npm run bundle
+      - run: npm run dist
+      - name: upload a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stereopticon-windows
+          path: |
+            dist/*.exe
+            dist/*.zip
+          if-no-files-found: error

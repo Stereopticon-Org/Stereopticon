@@ -49,7 +49,8 @@ jobs:
         shell: bash
         env:
           SGDB_API_KEY: ${{ secrets.SGDB_API_KEY }}
-        run: node -e "require('fs').writeFileSync('modules/builtin-keys.json', JSON.stringify({ steamGridDb: process.env.SGDB_API_KEY || '' }))"
+        run: |
+          node -e "require('fs').writeFileSync('modules/builtin-keys.json', JSON.stringify({ steamGridDb: process.env.SGDB_API_KEY || '' }))"
 
       - name: Build the installer and portable zip
         run: npm run dist -- --publish never

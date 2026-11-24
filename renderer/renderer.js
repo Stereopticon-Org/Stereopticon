@@ -214,7 +214,12 @@ wireWindowControl('btnClose', () => window.api.closeWindow());
 
 // ─── PATH ─────────────────────────────────────────────────────
 function getInstallPath() { return document.getElementById('installPath')?.value?.trim() || ''; }
-function setInstallPath(p) { const el = document.getElementById('installPath'); if (el) el.value = p; }
+function setInstallPath(p) {
+    const el = document.getElementById('installPath');
+    if (el) el.value = p;
+    clearTimeout(setInstallPath._t);
+    setInstallPath._t = setTimeout(() => refreshGameInspect().catch(() => {}), 150);
+}
 
 // Load saved game paths from localStorage
 function loadSavedGamePaths() {
@@ -1042,7 +1047,9 @@ function wiz3dOptionsHtml() {
                     <option value="">Loading…</option>
                 </select>
             </div>
+            <div id="gameFilesInfo" style="grid-column:1 / -1;font-size:11.5px;color:var(--text-secondary);line-height:1.6;"></div>
             <div class="wiz3d-actions">
+                <button class="link-btn" onclick="openGameFiles()">Open game folder</button>
                 ${removeBtn}
                 <button class="link-btn" style="border-color:var(--teal-border);color:var(--teal);" onclick="openReportModal('game')">Report a result</button>
             </div>
@@ -1091,6 +1098,58 @@ async function loadWiz3DGameOptions() {
             return `<option value="${p.key}" ${p.key === prefs.wiz3dPath ? 'selected' : ''}>${p.label}${fits ? ' · game uses this API' : ''}</option>`;
         }).join('');
 }
+
+// ── Where wiz3D goes, and wiz3D already in the folder ─────────────
+async function refreshGameInspect() {
+    if (!selectedGame) return null;
+    const gameId = selectedGame.id, gamePath = getInstallPath();
+    const exeName = selectedGame.exe_name || selectedProfile?.exe_name || null;
+    const siteExe = siteEntryFor(selectedGame)?.exe || null;
+    const info = await window.api.inspectGame(gameId, gamePath, exeName, siteExe);
+    if (selectedGame?.id !== gameId) return null;
+    selectedGame._inspect = info;
+    renderGameFilesInfo();
+    if (info?.wiz3d?.found && !info.wiz3d.byStereopticon && selectedProfile && !installedFixIds.has(selectedProfile.id)) {
+        const btn = document.getElementById('btnInstallFix');
+        if (btn && isWiz3DType(selectedProfile.type)) btn.textContent = `⟳ Replace wiz3D${info.wiz3d.version ? ' ' + info.wiz3d.version : ''}`;
+    }
+    return info;
+}
+function relToGame(p) {
+    const base = (getInstallPath() || '').replace(/[\\/]+$/, '');
+    return p && base && p.toLowerCase().startsWith(base.toLowerCase()) ? p.slice(base.length + 1) || p : p;
+}
+function renderGameFilesInfo() {
+    const box = document.getElementById('gameFilesInfo');
+    const info = selectedGame?._inspect;
+    if (!box || !info) return;
+    const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const lines = [];
+    if (info.exePath) {
+        const note = info.source === 'guess' ? ' <span style="color:var(--warn);">(a guess; check it)</span>'
+                   : info.source === 'chosen' ? ' (chosen by you)' : '';
+        lines.push(`wiz3D goes next to <code>${esc(relToGame(info.exePath))}</code>${note} · <a href="#" class="about-link" onclick="chooseGameExe();return false;">Change</a>`);
+    } else if (getInstallPath()) {
+        lines.push(`<span style="color:var(--warn);">Stereopticon could not find this game's .exe.</span> <a href="#" class="about-link" onclick="chooseGameExe();return false;">Choose it</a> so wiz3D goes in the right folder.`);
+    }
+    const w = info.wiz3d;
+    if (w?.found && !w.byStereopticon) {
+        lines.push(`<span style="color:var(--warn);">wiz3D${w.version ? ' ' + esc(w.version) : ''} is already in <code>${esc(relToGame(w.dir) || w.dir)}</code>, not installed by Stereopticon.</span> ` +
+                   `Installing replaces it; removing wiz3D in Stereopticon later puts this copy back.`);
+    }
+    box.innerHTML = lines.join('<br>');
+}
+window.chooseGameExe = async function() {
+    const r = await window.api.chooseExeFor(selectedGame.id, getInstallPath());
+    if (r?.success) await refreshGameInspect();
+    return r;
+};
+window.openGameFiles = function() {
+    const exe = selectedGame?._inspect?.exePath;
+    const target = exe || getInstallPath();
+    if (!target) { showResult(false, 'Set the Game Folder first.'); return; }
+    window.api.openLocalPath(target);   // a file opens its folder
+};
 
 window.onWiz3DVersionChange = async function(tag) {
     await window.api.setGamePrefs(selectedGame.id, { wiz3dVersion: tag || null });
@@ -1611,6 +1670,20 @@ async function handleInstallClick() {
     }
     const gamePath = getInstallPath();
     if (!gamePath) { showResult(false, 'Set the Game Folder path first — click Browse…'); return; }
+    if (isWiz3DType(selectedProfile?.type)) {
+        const info = selectedGame._inspect || await refreshGameInspect();
+        if (info && !info.exePath) {
+            if (!confirm("Stereopticon could not find this game's .exe. wiz3D has to go next to it. Choose the .exe now?")) return;
+            const pick = await chooseGameExe();
+            if (!pick?.success) return;
+        }
+        const w = selectedGame._inspect?.wiz3d;
+        if (w?.found && !w.byStereopticon && !installedFixIds.has(selectedProfile.id)) {
+            const ok = confirm(`wiz3D${w.version ? ' ' + w.version : ''} is already in this game's folder:\n${w.dir}\n\n` +
+                `Replace it with the version Stereopticon manages? Your current files are kept, and removing wiz3D in Stereopticon later puts them back.`);
+            if (!ok) return;
+        }
+    }
     const btn = document.getElementById('btnInstallFix');
     btn.disabled = true;
     resetTray();
@@ -1626,6 +1699,7 @@ async function handleInstallClick() {
             installedFixIds.add(selectedProfile.id);
             installedGameIds.add(selectedGame.id);
             updateBottomBar();
+            refreshGameInspect().catch(() => {});
             renderSidebar(gamesData);
             loadReshadeStatus();
             // Auto-install ReShade if this pipeline requires shaders
@@ -1690,8 +1764,9 @@ async function handleLaunchClick() {
     const exeName = selectedGame.exe_name
         || selectedGame.default_path?.split(/[/\\]/).filter(s => /\.\w+$/.test(s)).pop()
         || selectedGame.default_path?.split(/[/\\]/).pop();
-    const exePath = gamePath.replace(/[/\\]$/, '') + '\\' + exeName;
- 
+    // The exe found or chosen for this game (it may be in a subfolder).
+    const exePath = selectedGame._inspect?.exePath || (gamePath.replace(/[/\\]$/, '') + '\\' + exeName);
+
     resetTray();
     setProgress(80, 'Launching game...', null);
  
@@ -3248,13 +3323,10 @@ window.hideGame = function(id) {
 };
 
 function selectGame(game) {
-    // Save previous game's path before switching
-    if (selectedGame && selectedGame.id !== game.id) {
-        const prev = getInstallPath();
-        if (prev) {
-            saveGamePathToStorage(selectedGame.id, prev);
-        }
-    }
+    // A game's folder is remembered only when you browse to it or type it
+    // (the handlers on #browsePathBtn and #installPath). Saving whatever the
+    // box showed on every switch stored guessed defaults, which then beat
+    // the scan even after the game was found elsewhere.
     // The sidebar passes a LIGHT projection; fetch the full game record
     // (fixes / compat / paths / etc.) before rendering the detail view.
     // Cache it on `game._full` so re-selecting doesn't re-hit IPC.

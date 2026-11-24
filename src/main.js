@@ -232,7 +232,7 @@ ipcMain.handle('install:fix', async (event, { profile, gameId, gamePath, exeName
                     prefs.wiz3dVersion || prefs.wiz3dPath ? JSON.stringify(prefs) : '');
         const result = await installFix(profile, gamePath, (progress) => {
             safeSend(event.sender, 'install:progress', progress);
-        }, exeName || game?.exe_name || null, {
+        }, (prefs.exePath && fs.existsSync(prefs.exePath) ? prefs.exePath : null) || exeName || game?.exe_name || null, {
             beforeWrite: session?.beforeWrite, game,
             // The page's choice, else the path stereopticon.org reports working.
             wiz3d: { version: prefs.wiz3dVersion || null, path: prefs.wiz3dPath || defaultWiz3dPath || null },
@@ -1029,6 +1029,47 @@ ipcMain.handle('steam:search', async (_, { term }) => {
 });
 
 ipcMain.handle('games:steamLibraries', () => { try { return getSteamLibraries(); } catch { return []; } });
+// ── A game's exe and any wiz3D already in its folder ───────────
+// The exe comes from (in order) the one chosen on the game page, the path
+// stereopticon.org gives (its game files' optional "exe" field), the
+// catalogue's exe name found under the game folder, or a best guess.
+const wiz3dDetect = require('../modules/wiz3dDetect');
+ipcMain.handle('game:inspect', (_, { gameId, gamePath, exeName, siteExe }) => {
+    const { findGameExe } = require('../modules/installer');
+    const prefs = gamePrefs.get(gameId);
+    let exePath = null, source = null;
+    if (prefs.exePath && fs.existsSync(prefs.exePath)) { exePath = prefs.exePath; source = 'chosen'; }
+    // stereopticon.org can say where the exe is, relative to the game folder ("Binaries/Win32/TheBall.exe").
+    if (!exePath && siteExe && gamePath) {
+        const p = path.join(gamePath, siteExe);
+        if (fs.existsSync(p)) { exePath = p; source = 'website'; }
+    }
+    if (!exePath && exeName && gamePath) { exePath = findGameExe(gamePath, exeName); if (exePath) source = 'catalogue'; }
+    if (!exePath && gamePath && fs.existsSync(gamePath)) { exePath = userGames.guessExe(gamePath); if (exePath) source = 'guess'; }
+    const record = (() => {
+        const game = loadOneGame(gameId);
+        for (const f of game?.fixes || []) { const r = getInstallRecord(f.id); if (r) return r; }
+        return getInstallRecord(`${gameId}__wiz3d_try`);
+    })();
+    const wiz3d = wiz3dDetect.detect([exePath && path.dirname(exePath), gamePath]);
+    // Put there by Stereopticon itself, or by hand / another tool?
+    if (wiz3d.found) wiz3d.byStereopticon = !!(record && record.installDir &&
+        path.resolve(record.installDir).toLowerCase() === path.resolve(wiz3d.dir).toLowerCase());
+    return { exePath, source, wiz3d };
+});
+ipcMain.handle('game:chooseExeFor', async (event, { gameId, gamePath }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        title: "Choose the game's .exe (wiz3D goes next to it)",
+        defaultPath: gamePath && fs.existsSync(gamePath) ? gamePath : undefined,
+        properties: ['openFile'], filters: [{ name: 'Programs', extensions: ['exe'] }],
+    });
+    if (canceled || !filePaths[0]) return { success: false, canceled: true };
+    gamePrefs.set(gameId, { exePath: filePaths[0] });
+    if (/^(steam|user|epic|gog|ubisoft|xbox|windows)_/.test(gameId)) { try { userGames.setExe(gameId, filePaths[0]); } catch { /* not stored there */ } }
+    logger.info('games', `${gameId}: exe set to ${filePaths[0]}`);
+    return { success: true, exePath: filePaths[0] };
+});
 ipcMain.handle('fs:exists', (_, p) => !!p && fs.existsSync(p));
 ipcMain.handle('shell:showItem', (_, p) => { if (p && fs.existsSync(p)) shell.showItemInFolder(p); return true; });
 

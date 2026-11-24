@@ -325,6 +325,8 @@ const EXE_SEARCH_DEPTH = 4;
 
 /** Absolute path of the game's executable under gamePath, or null. */
 function findGameExe(gamePath, exeName) {
+    // An exe the user chose on the game page is a full path.
+    if (exeName && path.isAbsolute(exeName) && fs.existsSync(exeName)) return exeName;
     if (!gamePath || !exeName) return null;
     const wanted = path.basename(exeName).toLowerCase();
     const direct = path.join(gamePath, path.basename(exeName));

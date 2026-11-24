@@ -187,7 +187,7 @@ function pruneOldVersions(keepTag) {
     catch { return; }
     const byAge = dirs
         .map(d => ({ name: d.name, mtime: fs.statSync(path.join(versionsDir(), d.name)).mtimeMs }))
-        .filter(d => d.name !== keepTag && !d.name.endsWith('.partial') && !pinned.has(d.name))
+        .filter(d => d.name !== keepTag && !d.name.endsWith('.partial') && !pinned.has(d.name) && !isCustomTag(d.name))
         .sort((a, b) => b.mtime - a.mtime);
     for (const d of byAge.slice(KEEP_VERSIONS - 1)) {
         fs.rmSync(path.join(versionsDir(), d.name), { recursive: true, force: true });
@@ -266,15 +266,100 @@ async function status({ checkOnline = true } = {}) {
         catch (e) { error = e.message; }
     }
     const info = installed && { tag: installed.tag, name: installed.name, prerelease: !!installed.prerelease,
-                                installedAt: installed.installedAt };
+                                custom: !!installed.custom, installedAt: installed.installedAt };
     return {
         installed: info || null,
         latest,
         channel: channel(),
-        updateAvailable: !!(latest && (!installed || installed.tag !== latest.tag)),
+        // A custom build chosen as the default is never replaced automatically.
+        updateAvailable: !!(latest && (!installed || (!installed.custom && installed.tag !== latest.tag))),
         error,
     };
 }
 
+// ── Custom builds ─────────────────────────────────────────────
+// A wiz3D build from your own PC (a folder or a zip, such as a local build
+// or a GitHub Actions artifact), stored as versions/custom-<name> next to
+// the downloaded releases. Never pruned; a game page can pick it like a release.
+
+const CUSTOM_PREFIX = 'custom-';
+const FAMILY_DIRS = ['Stereo-Injector', 'HD3D', '3D-Vision-Direct', 'OpenGL-Quad-Buffer-Stereo'];
+const customFile = () => path.join(rootDir(), 'custom.json');
+
+function isCustomTag(tag) { return String(tag).startsWith(CUSTOM_PREFIX); }
+
+function listCustom() {
+    try { return JSON.parse(fs.readFileSync(customFile(), 'utf8')).filter(c => fs.existsSync(path.join(versionsDir(), c.tag))); }
+    catch { return []; }
+}
+function saveCustom(list) {
+    fs.mkdirSync(rootDir(), { recursive: true });
+    fs.writeFileSync(customFile(), JSON.stringify(list, null, 2));
+}
+
+// The folder that holds Stereo-Injector/, HD3D/ ... somewhere under dir.
+function findReleaseRoot(dir, depth = 3) {
+    let level = [dir];
+    for (let d = 0; d <= depth && level.length; d++) {
+        const next = [];
+        for (const x of level) {
+            let items; try { items = fs.readdirSync(x, { withFileTypes: true }); } catch { continue; }
+            if (items.some(i => i.isDirectory() && FAMILY_DIRS.includes(i.name))) return x;
+            for (const i of items) if (i.isDirectory()) next.push(path.join(x, i.name));
+        }
+        level = next;
+    }
+    return null;
+}
+
+/** Add a build from a folder or a .zip. Returns { tag, name }. */
+function addCustom(source, name) {
+    if (!source || !fs.existsSync(source)) throw new Error('That file or folder does not exist.');
+    const label = (name || path.basename(source).replace(/\.zip$/i, '')).trim() || 'build';
+    const slug = label.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'build';
+    let tag = CUSTOM_PREFIX + slug;
+    for (let i = 2; fs.existsSync(path.join(versionsDir(), tag)); i++) tag = `${CUSTOM_PREFIX}${slug}-${i}`;
+    const dest = path.join(versionsDir(), tag);
+    const staging = dest + '.partial';
+    fs.rmSync(staging, { recursive: true, force: true });
+    try {
+        if (/\.zip$/i.test(source)) {
+            extractRelease(source, staging);
+        } else {
+            fs.cpSync(source, staging, { recursive: true });
+        }
+        const root = findReleaseRoot(staging);
+        if (!root) throw new Error(`No wiz3D folders (${FAMILY_DIRS.join(', ')}) were found in it.`);
+        if (root === staging) fs.renameSync(staging, dest);
+        else { fs.renameSync(root, dest); fs.rmSync(staging, { recursive: true, force: true }); }
+    } catch (e) {
+        fs.rmSync(staging, { recursive: true, force: true });
+        throw e;
+    }
+    const list = listCustom().filter(c => c.tag !== tag);
+    list.push({ tag, name: label, source, addedAt: new Date().toISOString() });
+    saveCustom(list);
+    return { tag, name: label };
+}
+
+function removeCustom(tag) {
+    if (!isCustomTag(tag)) throw new Error('Only custom builds can be removed here.');
+    if (readCurrent()?.tag === tag) throw new Error('This build is the default. Choose another default first.');
+    fs.rmSync(path.join(versionsDir(), tag), { recursive: true, force: true });
+    saveCustom(listCustom().filter(c => c.tag !== tag));
+}
+
+/** Make a downloaded release or a custom build the default for every game. */
+function setCurrent(tag) {
+    const dir = path.join(versionsDir(), tag);
+    if (!fs.existsSync(dir)) throw new Error(`${tag} is not on this PC.`);
+    const custom = listCustom().find(c => c.tag === tag);
+    fs.writeFileSync(currentFile(), JSON.stringify({
+        tag, name: custom?.name || tag, custom: !!custom, installedAt: new Date().toISOString(),
+    }, null, 2));
+    return { tag };
+}
+
 module.exports = { currentDir, listReleases, getLatestRelease, getRelease, installRelease, ensureInstalled,
-                   ensureVersion, downloadedVersions, status, extractRelease, channel, isSupported };
+                   ensureVersion, downloadedVersions, status, extractRelease, channel, isSupported,
+                   listCustom, addCustom, removeCustom, setCurrent, isCustomTag };

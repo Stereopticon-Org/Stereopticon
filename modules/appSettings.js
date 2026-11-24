@@ -10,6 +10,7 @@
  *                                        wiz3D's own verbose logs at launch
  *   autoWiz3d        boolean             download new wiz3D releases at start-up
  *   appChannel       'stable' | 'beta'   which Stereopticon releases are offered
+ *   steamGridDbKey   string              the user's SteamGridDB API key (artwork)
  */
 
 const fs   = require('fs');
@@ -19,7 +20,7 @@ const path = require('path');
 const BASE = process.env.STEREOPTICON_HOME || path.join(os.homedir(), '.stereopticon');
 const FILE = path.join(BASE, 'settings.json');
 
-const DEFAULTS = { wiz3dChannel: 'stable', detailedLogging: false, autoWiz3d: true, appChannel: 'stable' };
+const DEFAULTS = { wiz3dChannel: 'stable', detailedLogging: false, autoWiz3d: true, appChannel: 'stable', steamGridDbKey: '' };
 
 function readAll() {
     try { return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }; }

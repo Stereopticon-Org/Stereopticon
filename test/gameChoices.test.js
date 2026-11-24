@@ -129,3 +129,34 @@ test('a report zip holds the report and the game logs', async () => {
     assert.strictEqual(q.get('api'), 'HD3D');
     assert.match(q.get('notes'), /HUD at screen depth/);
 });
+
+test('registry output is parsed into keys and values', () => {
+    const { parseReg } = require('../modules/gameLibraries');
+    const out = 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Ubisoft\\Launcher\\Installs\\13\r\n' +
+                '    Language    REG_SZ    en-US\r\n    InstallDir    REG_SZ    D:/Games/Driver San Francisco/\r\n\r\n' +
+                'HKEY_LOCAL_MACHINE\\SOFTWARE\\Ubisoft\\Launcher\\Installs\\856\r\n';
+    const blocks = parseReg(out);
+    assert.strictEqual(blocks.length, 2);
+    assert.strictEqual(blocks[0].values.InstallDir, 'D:/Games/Driver San Francisco/');
+});
+
+test('games from other launchers get stable ids and duplicates are dropped', () => {
+    const rows = userGames.setDiscovered([
+        { source: 'windows', title: 'MONGIL: STAR DIVE Epic', dir: 'D:/x' },
+        { source: 'epic', title: 'MONGIL: STAR DIVE', dir: 'D:/y' },
+        { source: 'steam', title: 'Uncatalogued', steam_app_id: '111', dir: 'D:/z' },
+    ]);
+    assert.deepStrictEqual(rows.map(r => r.id).sort(), ['epic_mongil-star-dive', 'steam_111']);
+});
+
+test('a custom wiz3D build can be added from a folder and made the default', () => {
+    const data = fs.mkdtempSync(path.join(os.tmpdir(), 'stereopticon-custom-'));
+    process.env.STEREOPTICON_DATA_DIR = data;
+    const src = fs.mkdtempSync(path.join(os.tmpdir(), 'stereopticon-build-'));
+    fs.mkdirSync(path.join(src, 'wiz3D', 'Stereo-Injector', 'DX9', '64-bit'), { recursive: true });
+    const r = wiz3dManager.addCustom(src, 'My build');
+    assert.strictEqual(r.tag, 'custom-my-build');
+    assert.ok(fs.existsSync(path.join(data, 'tools', 'wiz3d', 'versions', r.tag, 'Stereo-Injector')));
+    wiz3dManager.setCurrent(r.tag);
+    assert.throws(() => wiz3dManager.removeCustom(r.tag), /default/);
+});

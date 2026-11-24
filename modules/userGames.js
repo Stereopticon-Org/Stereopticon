@@ -102,7 +102,7 @@ function setExe(id, exePath) {
     const store = readStore();
     let entry = store.games.find(g => g.id === id);
     if (!entry) {
-        const steam = _steamCache?.find(g => g.id === id);
+        const steam = _discovered?.find(g => g.id === id);
         if (!steam) throw new Error(`Unknown game ${id}`);
         entry = { ...steam };
         store.games.push(entry);
@@ -114,7 +114,7 @@ function setExe(id, exePath) {
 
 // ── Steam libraries ──────────────────────────────────────────────
 
-let _steamCache = null;
+let _discovered = null;
 
 function parseManifest(file) {
     try {
@@ -148,7 +148,7 @@ function discoverSteamGames(commonPaths, knownAppIds) {
         }
     }
     out.sort((a, b) => a.title.localeCompare(b.title));
-    _steamCache = out;
+    _discovered = out;
     return out;
 }
 
@@ -202,7 +202,7 @@ function guessExe(dir, maxDepth = 3) {
 }
 
 /** All extra games: user-added first, then Steam ones not already added. */
-function list(steamGames = _steamCache || []) {
+function list(steamGames = _discovered || []) {
     const store = readStore();
     const ids = new Set(store.games.map(g => g.id));
     return [...store.games.map(g => ({ ...g })), ...steamGames.filter(g => !ids.has(g.id))];
@@ -214,8 +214,8 @@ function getOne(id) {
     if (!entry) return null;
     if (!entry.exe_path && entry.install_dir) entry.exe_path = guessExe(entry.install_dir) || '';
     // Remember the guess so it is not repeated (and can be corrected).
-    if (entry.source === 'steam' && entry.exe_path && _steamCache) {
-        const cached = _steamCache.find(g => g.id === id);
+    if (entry.source === 'steam' && entry.exe_path && _discovered) {
+        const cached = _discovered.find(g => g.id === id);
         if (cached) cached.exe_path = entry.exe_path;
     }
     return toGameRecord(entry);
@@ -241,4 +241,30 @@ function sidebarApis(api) {
     return [api];
 }
 
-module.exports = { addFromExe, remove, setExe, discoverSteamGames, guessExe, list, getOne, sidebarRows, STORE };
+/**
+ * Games found by modules/gameLibraries.js that the catalogue does not list,
+ * from any launcher. Ids: steam_<appid>, or <source>_<slug> (epic_, gog_,
+ * ubisoft_, xbox_, windows_).
+ */
+function setDiscovered(entries) {
+    const slug = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const seen = new Set();
+    const out = [];
+    // Launcher records first, so a Windows-programs duplicate ("X Epic") is dropped.
+    const ordered = [...(entries || [])].sort((a, b) => (a.source === 'windows') - (b.source === 'windows'));
+    for (const e of ordered) {
+        const key = slug(e.title).replace(/-(epic|steam|gog|ea|ubisoft)$/, '');
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push({
+            id: e.steam_app_id ? `steam_${e.steam_app_id}` : `${e.source}_${key}`,
+            title: e.title, steam_app_id: e.steam_app_id || '', install_dir: e.dir,
+            exe_path: e.exe && fs.existsSync(e.exe) ? e.exe : undefined, source: e.source,
+        });
+    }
+    out.sort((a, b) => a.title.localeCompare(b.title));
+    _discovered = out;
+    return out;
+}
+
+module.exports = { addFromExe, remove, setExe, discoverSteamGames, setDiscovered, guessExe, list, getOne, sidebarRows, STORE };

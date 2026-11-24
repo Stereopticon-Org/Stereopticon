@@ -35,7 +35,8 @@ getDisplaySoftwareStatus:  (familyId, deviceId)        =>
     // ── UPDATE these two existing bindings to pass steamAppId ──────
     // Replace your current gameScan / gameScanAll lines with these:
     gameScan:    (title, exeName, steamAppId) => ipcRenderer.invoke('game:scan',    { title, exeName, steamAppId: steamAppId || null }),
-    gameScanAll: (targets)                   => ipcRenderer.invoke('game:scanAll', { targets }),
+    gameScanAll: ()                          => ipcRenderer.invoke('game:scanAll'),
+    gameLastScan: ()                         => ipcRenderer.invoke('game:lastScan'),
  
     // Data
     loadGames:        () => ipcRenderer.invoke('games:loadAll'),
@@ -142,6 +143,9 @@ getDisplaySoftwareStatus:  (familyId, deviceId)        =>
     },
     wiz3dListReleases: () => ipcRenderer.invoke('wiz3d:listReleases'),
     wiz3dPaths:        () => ipcRenderer.invoke('wiz3d:paths'),
+    wiz3dAddCustom:    (kind, name) => ipcRenderer.invoke('wiz3d:addCustom', { kind, name }),
+    wiz3dRemoveCustom: (tag) => ipcRenderer.invoke('wiz3d:removeCustom', { tag }),
+    wiz3dSetDefault:   (tag) => ipcRenderer.invoke('wiz3d:setDefault', { tag }),
 
     // Settings kept by the main process (wiz3D channel, detailed logging)
     getSettings: ()       => ipcRenderer.invoke('settings:get'),
@@ -181,6 +185,8 @@ getDisplaySoftwareStatus:  (familyId, deviceId)        =>
     // Game details: name, artwork, API, catalogue match
     setGameDetails: (gameId, details) => ipcRenderer.invoke('gameDetails:set', { gameId, details }),
     steamSearch:    (term) => ipcRenderer.invoke('steam:search', { term }),
+    sgdbSearch:     (term) => ipcRenderer.invoke('sgdb:search', { term }),
+    sgdbArtwork:    (id)   => ipcRenderer.invoke('sgdb:artwork', { id }),
 
     // Logs and reports
     writeLog:     (level, args) => ipcRenderer.send('log:write', { level, args }),

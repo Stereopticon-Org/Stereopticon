@@ -3,7 +3,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 const os   = require('os');
-const { scanGame, scanAllGames, getSteamCommonPaths, getSteamLibraries } = require('../modules/gameRegistry');
+const { scanGame, scanAllGames, getSteamCommonPaths, getSteamLibraries, folderMatches } = require('../modules/gameRegistry');
+const gameLibraries = require('../modules/gameLibraries');
 const logger      = require('../modules/logger');
 logger.install();
 const appSettings = require('../modules/appSettings');
@@ -22,6 +23,8 @@ function applyDetailsToRow(row, d) {
     if (d.title) out.title = d.title;
     if (d.steam_app_id) out.steam_app_id = String(d.steam_app_id);
     if (d.api) out.graphics_apis = [d.api === 'dx10-11' ? 'dx11' : d.api];
+    if (d.art_poster) out.art_poster = d.art_poster;
+    if (d.art_hero) out.art_hero = d.art_hero;
     return out;
 }
 const { execSync } = require('child_process');
@@ -84,29 +87,33 @@ function _readSidebar() {
 function loadAllGames()     { return _readBundle().games     || []; }
 function loadAllPipelines() { return _readBundle().pipelines || []; }
 function loadAllOutputs()   { return _readBundle().outputs   || []; }
-// The catalogue plus games it does not list: Steam games found on this PC
+// The catalogue plus games it does not list: games found on this PC
 // and games the user added by picking an .exe (modules/userGames.js).
 function loadSidebar() {
     const sb = _readSidebar();
     let extra = [];
+    // Games outside the catalogue come from the last library scan (cached),
+    // so start-up never waits for a scan; game:scanAll refreshes them.
     try {
-        const known = new Set(sb.games.map(g => String(g.steam_app_id || '')).filter(Boolean));
-        userGames.discoverSteamGames(getSteamCommonPaths(), known);
+        const last = gameLibraries.cached();
+        if (last?.extras) userGames.setDiscovered(last.extras);
         extra = userGames.sidebarRows();
-    } catch (e) { console.warn('[userGames] Steam discovery failed:', e.message); }
+    } catch (e) { console.warn('[userGames] could not load the last scan:', e.message); }
     const prefs = gamePrefs.readAll();
     const rows = [...sb.games, ...extra].map(r => prefs[r.id]?.details ? applyDetailsToRow(r, prefs[r.id].details) : r);
     return { ...sb, games: rows };
 }
 function loadOneGame(id) {
     _readBundle();
-    const base = _gameById?.get(id) || (/^(steam|user)_/.test(String(id)) ? userGames.getOne(id) : null);
+    const base = _gameById?.get(id) || (/^(steam|user|epic|gog|ubisoft|xbox|windows)_/.test(String(id)) ? userGames.getOne(id) : null);
     const d = base && gamePrefs.get(id).details;
     if (!d) return base;
     const game = { ...base };
     if (d.title) game.title = d.title;
     if (d.steam_app_id) game.steam_app_id = String(d.steam_app_id);
     if (d.api) game.graphics_api = d.api;
+    if (d.art_poster) game.art_poster = d.art_poster;
+    if (d.art_hero) game.art_hero = d.art_hero;
     // A game added by hand can borrow the profile of the catalogue game it is.
     const match = d.match_id && _gameById?.get(d.match_id);
     if (match && !(game.fixes || []).length) {
@@ -848,19 +855,44 @@ ipcMain.handle('wiz3d:update', async (event) => {
 ipcMain.handle('wiz3d:listReleases', async () => {
     const current = (await wiz3dManager.status({ checkOnline: false })).installed;
     try {
-        return { success: true, releases: await wiz3dManager.listReleases(), downloaded: wiz3dManager.downloadedVersions(), current };
+        return { success: true, releases: await wiz3dManager.listReleases(), downloaded: wiz3dManager.downloadedVersions(),
+                 custom: wiz3dManager.listCustom(), current };
     } catch (e) {
-        return { success: false, message: e.message, releases: [], downloaded: wiz3dManager.downloadedVersions(), current };
+        return { success: false, message: e.message, releases: [], downloaded: wiz3dManager.downloadedVersions(),
+                 custom: wiz3dManager.listCustom(), current };
     }
+});
+ipcMain.handle('wiz3d:addCustom', async (event, { kind, name }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, kind === 'zip'
+        ? { title: 'Choose a wiz3D build (.zip)', properties: ['openFile'], filters: [{ name: 'Zip archives', extensions: ['zip'] }] }
+        : { title: 'Choose a wiz3D build folder', properties: ['openDirectory'] });
+    if (canceled || !filePaths[0]) return { success: false, canceled: true };
+    try {
+        const r = wiz3dManager.addCustom(filePaths[0], name);
+        logger.info('wiz3d', `Added custom build ${r.tag} from ${filePaths[0]}`);
+        return { success: true, ...r };
+    } catch (e) { return { success: false, message: e.message }; }
+});
+ipcMain.handle('wiz3d:removeCustom', (_, { tag }) => {
+    try { wiz3dManager.removeCustom(tag); return { success: true }; }
+    catch (e) { return { success: false, message: e.message }; }
+});
+ipcMain.handle('wiz3d:setDefault', (_, { tag }) => {
+    try { const r = wiz3dManager.setCurrent(tag); logger.info('wiz3d', `Default is now ${tag}`); return { success: true, ...r }; }
+    catch (e) { return { success: false, message: e.message }; }
 });
 ipcMain.handle('wiz3d:paths', () => Object.entries(gamePrefs.WIZ3D_PATHS).map(([key, p]) => ({ key, label: p.label, type: p.type })));
 
 // ── Settings that the main process needs ────────────────────────
-ipcMain.handle('settings:get', () => appSettings.readAll());
+ipcMain.handle('settings:get', () => {
+    const s = appSettings.readAll();
+    return { ...s, steamGridDbKey: s.steamGridDbKey ? '••••' + String(s.steamGridDbKey).slice(-4) : '' };
+});
 ipcMain.handle('settings:set', (_, values) => {
     const next = appSettings.set(values || {});
     logger.setDetailed(next.detailedLogging);
-    logger.info('settings', 'Settings changed:', JSON.stringify(values));
+    logger.info('settings', 'Settings changed:', JSON.stringify({ ...values, ...(values?.steamGridDbKey ? { steamGridDbKey: '(set)' } : {}) }));
     return next;
 });
 
@@ -958,7 +990,7 @@ ipcMain.handle('appUpdate:install', async (event) => {
 // ── Game details (name, artwork, API, catalogue match) ──────────
 ipcMain.handle('gameDetails:set', (_, { gameId, details }) => {
     const clean = {};
-    for (const k of ['title', 'steam_app_id', 'api', 'match_id']) {
+    for (const k of ['title', 'steam_app_id', 'api', 'match_id', 'art_poster', 'art_hero']) {
         const v = details?.[k];
         if (v !== undefined && v !== null && String(v).trim() !== '') clean[k] = String(v).trim();
     }
@@ -966,6 +998,15 @@ ipcMain.handle('gameDetails:set', (_, { gameId, details }) => {
     gamePrefs.set(gameId, { details: Object.keys(clean).length ? clean : null });
     return { game: loadOneGame(gameId), row: applyDetailsToRow(
         loadSidebar().games.find(r => r.id === gameId) || {}, clean) };
+});
+const steamGridDb = require('../modules/steamGridDb');
+ipcMain.handle('sgdb:search', async (_, { term }) => {
+    try { return { success: true, items: await steamGridDb.search(term) }; }
+    catch (e) { return { success: false, message: e.message, items: [] }; }
+});
+ipcMain.handle('sgdb:artwork', async (_, { id }) => {
+    try { return { success: true, ...(await steamGridDb.artwork(id)) }; }
+    catch (e) { return { success: false, message: e.message, posters: [], heroes: [] }; }
 });
 ipcMain.handle('steam:search', async (_, { term }) => {
     return new Promise(resolve => {
@@ -1020,9 +1061,37 @@ ipcMain.handle('game:scan', async (_, { title, exeName, steamAppId }) => {
     try { return await scanGame(title, exeName || null, steamAppId || null); }
     catch (e) { return { found: false, error: e.message }; }
 });
-ipcMain.handle('game:scanAll', async (_, { targets }) => {
-    try { return await scanAllGames(targets || []); }
-    catch (e) { return {}; }
+// Every launcher is read once, asynchronously, and matched against the whole
+// catalogue in memory (modules/gameLibraries.js). Returns the catalogue
+// games' folders, rows for installed games the catalogue lacks, and the
+// Steam libraries (with any that are not connected).
+let _scanRunning = null;
+ipcMain.handle('game:scanAll', async () => {
+    if (_scanRunning) return _scanRunning;
+    _scanRunning = (async () => {
+        const started = Date.now();
+        try {
+            const targets = loadAllGames().map(g => ({
+                id: g.id, title: g.title,
+                exeName: g.exe_name || g.fixes?.[0]?.exe_name || null,
+                steamAppId: g.steam_app_id || null,
+            }));
+            const r = await gameLibraries.scan(targets, { folderMatches });
+            userGames.setDiscovered(r.extras);
+            const prefs = gamePrefs.readAll();
+            const rows = userGames.sidebarRows().map(row => prefs[row.id]?.details ? applyDetailsToRow(row, prefs[row.id].details) : row);
+            logger.info('scan', `Found ${Object.keys(r.paths).length} catalogue games and ${r.extras.length} others in ${Date.now() - started} ms`);
+            return { paths: r.paths, rows, steamLibraries: r.steamLibraries, sources: r.sources };
+        } catch (e) {
+            logger.error('scan', 'Library scan failed:', e.stack || e.message);
+            return { paths: {}, rows: null, error: e.message };
+        } finally { _scanRunning = null; }
+    })();
+    return _scanRunning;
+});
+ipcMain.handle('game:lastScan', () => {
+    const c = gameLibraries.cached();
+    return c ? { at: c.at, steamLibraries: c.steamLibraries, sources: c.sources } : null;
 });
 
 const EXTERNAL_SOFTWARE = {

@@ -456,6 +456,16 @@
     .monitors-output-row .config-item { min-width:0; }
     .monitors-output-row .display-chip, .monitors-output-row .csel, .monitors-output-row .csel-btn { width:100%;max-width:100%;box-sizing:border-box; }
     #settingsTabContent-monitors #settingsBody > * { max-width:100%;box-sizing:border-box; }
+    .sgdb-grid { display:grid;gap:6px;margin-top:6px;max-height:260px;overflow-y:auto;padding-right:4px; }
+    .sgdb-posters { grid-template-columns:repeat(auto-fill,minmax(78px,1fr)); }
+    .sgdb-heroes  { grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); }
+    .sgdb-grid img { width:100%;display:block;border-radius:4px;border:2px solid transparent;cursor:pointer;background:var(--surface-2); }
+    .sgdb-posters img { aspect-ratio:2/3;object-fit:cover; }
+    .sgdb-heroes img  { aspect-ratio:96/31;object-fit:cover; }
+    .sgdb-grid img:hover { border-color:var(--glass-border-bright); }
+    .sgdb-grid img.selected { border-color:var(--teal); }
+    .sgdb-game { font-size:11px;padding:4px 9px;border:1px solid var(--glass-border);border-radius:12px;cursor:pointer;color:var(--text-secondary); }
+    .sgdb-game:hover, .sgdb-game.selected { border-color:var(--teal-border);color:var(--text-primary); }
     .settings-heading { font-size:11px;color:var(--text-dim);font-family:var(--font-display);text-transform:uppercase;letter-spacing:1.5px;font-weight:600;margin-bottom:8px; }
     .settings-card { padding:10px 12px;border:1px solid var(--glass-border);border-radius:8px;background:rgba(237,230,218,0.02);margin-bottom:8px; }
     .settings-check { display:flex;align-items:flex-start;gap:10px;cursor:pointer; }
@@ -617,6 +627,16 @@
                     </span>
                 </label>
 
+                <div class="settings-heading">wiz3D builds on this PC</div>
+                <div class="settings-card" style="margin-bottom:8px;">
+                    <div id="wiz3dBuildsBody" style="font-size:11.5px;">…</div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+                    <button onclick="addWiz3DCustom('folder')" class="modal-cancel" style="font-size:11px;">Add a build from a folder…</button>
+                    <button onclick="addWiz3DCustom('zip')" class="modal-cancel" style="font-size:11px;">Add a build from a zip…</button>
+                </div>
+                <div class="settings-check-sub" style="margin-bottom:22px;">For your own builds or GitHub Actions downloads. Any folder or zip with wiz3D's Stereo-Injector, HD3D or 3D-Vision-Direct folders inside works.</div>
+
                 <!-- Logging and reports -->
                 <div class="settings-heading">Logs and reports</div>
                 <label class="settings-card settings-check">
@@ -629,6 +649,27 @@
                 <div style="display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap;">
                     <button onclick="window.api.openLogs()" class="modal-cancel" style="font-size:11px;">Open logs folder</button>
                     <button onclick="closeSettingsModal();openReportModal('app')" class="modal-cancel" style="font-size:11px;">Report a problem with Stereopticon</button>
+                </div>
+
+                <!-- Game libraries: what the last scan found, per launcher -->
+                <div class="settings-heading">Game libraries</div>
+                <div class="settings-card" style="margin-bottom:8px;">
+                    <div id="gameLibrariesBody" style="font-size:11px;color:var(--text-dim);">Not scanned yet.</div>
+                </div>
+                <div style="display:flex;gap:8px;margin-bottom:22px;">
+                    <button onclick="runScanAll()" class="modal-cancel" style="font-size:11px;">Look for games again</button>
+                </div>
+
+                <!-- Artwork -->
+                <div class="settings-heading">Artwork</div>
+                <div class="settings-card" style="margin-bottom:22px;">
+                    <div style="font-size:12px;color:var(--text-primary);">SteamGridDB API key</div>
+                    <div class="settings-check-sub" style="margin-bottom:8px;">Lets you pick posters and banners from SteamGridDB in each game's details (the ⚙ on the game page). Get a free key from <a href="#" class="about-link" onclick="window.api.openUrl('https://www.steamgriddb.com/profile/preferences/api');return false;">SteamGridDB → Preferences → API</a>. It stays on this PC.</div>
+                    <div style="display:flex;gap:6px;">
+                        <input id="sgdbKeyInput" class="details-input" type="password" placeholder="Paste your API key" style="flex:1;">
+                        <button class="modal-cancel" style="font-size:11px;" onclick="saveSgdbKey()">Save</button>
+                    </div>
+                    <div id="sgdbKeyStatus" class="settings-check-sub"></div>
                 </div>
 
                 <!-- Stereo Loom -->
@@ -889,6 +930,27 @@
                 <div id="detailsArtResults" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;"></div>
                 <label class="details-label">Steam app ID</label>
                 <input id="detailsSteamId" class="details-input" type="text" placeholder="For example 238010">
+
+                <label class="details-label">Artwork from SteamGridDB</label>
+                <div id="sgdbNoKey" class="details-hint" style="display:none;">Add your free SteamGridDB API key in Settings → General → Artwork to pick from the community's posters and banners.</div>
+                <div id="sgdbBlock">
+                    <div style="display:flex;gap:6px;">
+                        <input id="sgdbSearch" class="details-input" type="text" placeholder="Search SteamGridDB" style="flex:1;margin:0;" onkeydown="if(event.key==='Enter')searchSgdb()">
+                        <button class="modal-cancel" style="font-size:11px;" onclick="searchSgdb()">Search</button>
+                    </div>
+                    <div id="sgdbGames" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
+                    <div id="sgdbPostersWrap" style="display:none;">
+                        <div class="details-hint" style="margin-top:10px;">Poster (library tile)</div>
+                        <div id="sgdbPosters" class="sgdb-grid sgdb-posters"></div>
+                    </div>
+                    <div id="sgdbHeroesWrap" style="display:none;">
+                        <div class="details-hint" style="margin-top:10px;">Banner (game page)</div>
+                        <div id="sgdbHeroes" class="sgdb-grid sgdb-heroes"></div>
+                    </div>
+                    <div id="sgdbChosen" class="details-hint"></div>
+                </div>
+                <input id="detailsArtPoster" type="hidden">
+                <input id="detailsArtHero" type="hidden">
                 <div id="detailsStatus" style="font-size:11px;margin-top:8px;"></div>
             </div>
             <div style="display:flex;justify-content:space-between;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid var(--glass-border);flex-shrink:0;">

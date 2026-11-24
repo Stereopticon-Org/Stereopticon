@@ -1067,11 +1067,15 @@ async function loadWiz3DGameOptions() {
     const current = rel?.current?.tag;
     const downloaded = new Set(rel?.downloaded || []);
     const releases = rel?.releases?.length ? rel.releases
-                   : [...downloaded].map(tag => ({ tag, prerelease: false }));   // offline
+                   : [...downloaded].filter(t => !t.startsWith('custom-')).map(tag => ({ tag, prerelease: false }));   // offline
     if (prefs.wiz3dVersion && !releases.some(r => r.tag === prefs.wiz3dVersion)) releases.push({ tag: prefs.wiz3dVersion });
     vSel.innerHTML = `<option value="">Default${current ? ` (${current})` : ''}, set in Settings</option>` +
         releases.map(r => `<option value="${r.tag}" ${r.tag === prefs.wiz3dVersion ? 'selected' : ''}>` +
             `${r.tag}${r.prerelease ? ' (beta)' : ''}${downloaded.has(r.tag) ? '' : ' (will download)'}</option>`).join('');
+    // Custom builds added in Settings → General.
+    for (const c of rel?.custom || []) {
+        vSel.insertAdjacentHTML('beforeend', `<option value="${c.tag}" ${c.tag === prefs.wiz3dVersion ? 'selected' : ''}>${String(c.name).replace(/</g, '&lt;')} (custom build)</option>`);
+    }
     if (!rel?.success && rel?.message) vSel.title = `Could not list wiz3D releases: ${rel.message}`;
 
     // Render paths: the recommended one first (the website's known-good path
@@ -1128,7 +1132,7 @@ window.addGameFromExe = async function() {
 };
 
 // ── Game details: name, catalogue match, API, artwork, exe ───────
-function isAddedGame(game) { return /^(steam|user)_/.test(game?.id || ''); }
+function isAddedGame(game) { return /^(steam|user|epic|gog|ubisoft|xbox|windows)_/.test(game?.id || ''); }
 
 window.openDetailsModal = async function(justAdded = false) {
     if (!selectedGame) return;
@@ -1143,6 +1147,15 @@ window.openDetailsModal = async function(justAdded = false) {
     document.getElementById('detailsSteamId').value = d.steam_app_id || g.steam_app_id || '';
     document.getElementById('detailsArtSearch').value = d.title || g.title || '';
     document.getElementById('detailsArtResults').innerHTML = '';
+    document.getElementById('detailsArtPoster').value = d.art_poster || '';
+    document.getElementById('detailsArtHero').value = d.art_hero || '';
+    document.getElementById('sgdbSearch').value = d.title || g.title || '';
+    ['sgdbGames', 'sgdbPosters', 'sgdbHeroes'].forEach(id => { document.getElementById(id).innerHTML = ''; });
+    ['sgdbPostersWrap', 'sgdbHeroesWrap'].forEach(id => { document.getElementById(id).style.display = 'none'; });
+    updateSgdbChosen();
+    const hasKey = !!(await window.api.getSettings()).steamGridDbKey;
+    document.getElementById('sgdbNoKey').style.display = hasKey ? 'none' : '';
+    document.getElementById('sgdbBlock').style.display = hasKey ? '' : 'none';
     document.getElementById('detailsStatus').textContent = '';
 
     // Matching to a catalogue game only makes sense for games added from
@@ -1186,10 +1199,69 @@ window.searchDetailsArt = async function() {
         document.getElementById('detailsSteamId').value = el.dataset.id;
     });
 };
+// ── SteamGridDB artwork picker (game details dialog) ─────────────
+function updateSgdbChosen() {
+    const p = document.getElementById('detailsArtPoster').value, h = document.getElementById('detailsArtHero').value;
+    document.getElementById('sgdbChosen').textContent = (p || h)
+        ? `Chosen: ${[p && 'poster', h && 'banner'].filter(Boolean).join(' and ')}. Save to use it.`
+        : '';
+}
+window.searchSgdb = async function() {
+    const term = document.getElementById('sgdbSearch').value.trim();
+    const box = document.getElementById('sgdbGames');
+    if (!term) return;
+    box.innerHTML = '<span class="details-hint">Searching…</span>';
+    const r = await window.api.sgdbSearch(term);
+    if (!r.success || !r.items.length) { box.innerHTML = `<span class="details-hint">${r.message || 'Nothing found.'}</span>`; return; }
+    const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    box.innerHTML = r.items.map(g => `<span class="sgdb-game" data-id="${g.id}">${esc(g.name)}${g.year ? ' (' + g.year + ')' : ''}</span>`).join('');
+    box.querySelectorAll('.sgdb-game').forEach(el => el.onclick = () => {
+        box.querySelectorAll('.sgdb-game').forEach(x => x.classList.remove('selected'));
+        el.classList.add('selected');
+        loadSgdbArtwork(el.dataset.id);
+    });
+    box.querySelector('.sgdb-game').click();   // the best match straight away
+};
+async function loadSgdbArtwork(id) {
+    const posters = document.getElementById('sgdbPosters'), heroes = document.getElementById('sgdbHeroes');
+    document.getElementById('sgdbPostersWrap').style.display = '';
+    document.getElementById('sgdbHeroesWrap').style.display = '';
+    posters.innerHTML = heroes.innerHTML = '<span class="details-hint">Loading…</span>';
+    const r = await window.api.sgdbArtwork(id);
+    const fill = (box, list, inputId) => {
+        const cur = document.getElementById(inputId).value;
+        box.innerHTML = list.length
+            ? list.map(a => `<img src="${a.thumb}" data-url="${a.url}" loading="lazy" class="${a.url === cur ? 'selected' : ''}" title="${a.width}×${a.height}${a.style ? ' · ' + a.style : ''}">`).join('')
+            : '<span class="details-hint">None on SteamGridDB yet.</span>';
+        box.querySelectorAll('img').forEach(img => img.onclick = () => {
+            const was = img.classList.contains('selected');
+            box.querySelectorAll('img').forEach(x => x.classList.remove('selected'));
+            document.getElementById(inputId).value = was ? '' : img.dataset.url;
+            if (!was) img.classList.add('selected');
+            updateSgdbChosen();
+        });
+    };
+    if (!r.success) { posters.innerHTML = `<span class="details-hint">${r.message}</span>`; heroes.innerHTML = ''; return; }
+    fill(posters, r.posters, 'detailsArtPoster');
+    fill(heroes, r.heroes, 'detailsArtHero');
+}
+window.saveSgdbKey = async function() {
+    const v = document.getElementById('sgdbKeyInput').value.trim();
+    await window.api.setSettings({ steamGridDbKey: v });
+    document.getElementById('sgdbKeyInput').value = '';
+    const status = document.getElementById('sgdbKeyStatus');
+    status.textContent = v ? 'Saved. Checking it…' : 'Key removed.';
+    if (v) {
+        const t = await window.api.sgdbSearch('Half-Life');
+        status.textContent = t.success ? 'Saved and working.' : `Saved, but SteamGridDB said: ${t.message}`;
+    }
+};
+
 async function applyGameDetails(details) {
     const r = await window.api.setGameDetails(selectedGame.id, details);
     const row = gamesData.find(x => x.id === selectedGame.id);
-    if (row && r?.row) Object.assign(row, { title: r.row.title, steam_app_id: r.row.steam_app_id, graphics_apis: r.row.graphics_apis });
+    if (row && r?.row) Object.assign(row, { title: r.row.title, steam_app_id: r.row.steam_app_id, graphics_apis: r.row.graphics_apis,
+                                            art_poster: r.row.art_poster, art_hero: r.row.art_hero });
     if (r?.game) Object.assign(selectedGame, r.game, { _tryFix: null, _full: true });
     closeDetailsModal();
     renderSidebar(gamesData);
@@ -1208,6 +1280,8 @@ window.saveGameDetails = async function() {
         title: title && title !== selectedGame.title ? title : (title || ''),
         api: document.getElementById('detailsApi').value,
         steam_app_id: document.getElementById('detailsSteamId').value.trim(),
+        art_poster: document.getElementById('detailsArtPoster').value,
+        art_hero: document.getElementById('detailsArtHero').value,
         match_id,
     });
 };
@@ -2326,42 +2400,10 @@ async function init() {
             loadSiteGames().catch(e => console.warn('[site]', e));
             autoDownloadWiz3D().catch(e => console.warn('[wiz3D auto]', e));
             checkAppUpdate(false).catch(() => {});
-            warnOfflineSteamLibraries().catch(() => {});
         }, 800);
-        // Background game path scan. Wait a beat so the UI paints first.
-        // If we hydrated from cache, this becomes a freshness check; if we
-        // didn't, it's the first scan since install.
-        // Filter the scan to plausibly-installable games only — anything
-        // without a Steam app ID AND without an exe_name has nothing to
-        // probe for. This drops the scan from 7,500 → ~500 candidates, the
-        // dominant chunk of "took ages to be usable after launch".
-        const scanCandidates = gamesData
-            .filter(g => g.steam_app_id || g.exe_name || g.default_path)
-            .map(g => ({
-                id:          g.id,
-                title:       g.title,
-                exeName:     g.exe_name || g.fixes?.[0]?.exe_name || null,
-                steamAppId:  g.steam_app_id || null,
-            }));
-        // Defer the scan until after the user can actually interact (1.5s)
-        // and run it in the background. Cached results from previous launches
-        // already power the sidebar; this just freshens them.
-        setTimeout(async () => {
-            try {
-                const fresh = await window.api.gameScanAll(scanCandidates);
-                window._scannedPaths = fresh;
-                try {
-                    localStorage.setItem(SCAN_CACHE_KEY, JSON.stringify({
-                        ts:    Date.now(),
-                        paths: fresh,
-                        count: gamesData.length,
-                    }));
-                } catch {}
-                const cachedKeys = cachedScan ? Object.keys(cachedScan).sort().join(',') : '';
-                const freshKeys  = Object.keys(fresh).sort().join(',');
-                if (cachedKeys !== freshKeys) renderSidebar(gamesData);
-            } catch { /* silent */ }
-        }, 1500);
+        // Scan every launcher in the background after the window has painted.
+        // The last scan's results (cached) already fill the library.
+        setTimeout(() => runScanAll({ quiet: true }), 1500);
     } catch (e) {
         console.error('Failed to load data:', e);
         detailArea.innerHTML = `<div style="color:var(--danger);padding:20px;">Error loading data: ${e.message}</div>`;
@@ -2447,6 +2489,9 @@ function gameGradient(gameId) {
 // hash-derived gradient. The image layer is just on top of the gradient in
 // CSS multi-background, so a 404 cleanly reveals the gradient underneath.
 function gameArtUrl(game, kind) {
+    // Artwork chosen in the game details dialog (SteamGridDB) comes first.
+    if (kind === 'poster' && game?.art_poster) return game.art_poster;
+    if (kind === 'hero' && game?.art_hero) return game.art_hero;
     if (!game?.steam_app_id) return null;
     const base = `https://cdn.akamai.steamstatic.com/steam/apps/${game.steam_app_id}`;
     switch (kind) {
@@ -4383,6 +4428,8 @@ window.openSettingsModal = async function() {
         const appBeta = document.getElementById('appBetaToggle');
         if (auto)    auto.checked    = s.autoWiz3d !== false;
         if (appBeta) appBeta.checked = s.appChannel === 'beta';
+        const ks = document.getElementById('sgdbKeyStatus');
+        if (ks) ks.textContent = s.steamGridDbKey ? `A key is saved (${s.steamGridDbKey}).` : 'No key saved.';
         // Library visibility and other experiments: running from source only.
         const info = await window.api.getAppVersion?.();
         const dev = document.getElementById('devOnlySettings');
@@ -4414,7 +4461,7 @@ async function autoDownloadWiz3D() {
     const s = await window.api.getSettings();
     if (s.autoWiz3d === false) return;
     const st = await window.api.wiz3dStatus();
-    if (!st || st.error || !st.updateAvailable) return;
+    if (!st || st.error || !st.updateAvailable || st.installed?.custom) return;
     // Never go backwards automatically (a beta installed while on stable).
     if (st.installed?.prerelease && st.channel === 'stable') return;
     showNotice(st.installed ? `Downloading wiz3D ${st.latest.tag}…` : 'Downloading wiz3D for the first time…');
@@ -4518,6 +4565,47 @@ async function renderNewsTab() {
     }).join('') : `<div style="font-size:11px;color:var(--text-dim);">${n?.success === false ? 'Could not reach stereopticon.org.' : 'No news yet.'}</div>`;
     newsBox.querySelectorAll('.news-item').forEach(el => el.onclick = () => window.api.openUrl(el.dataset.url));
 }
+
+// ── wiz3D builds on this PC: default, custom builds ─────────────
+async function renderWiz3DBuilds() {
+    const box = document.getElementById('wiz3dBuildsBody');
+    if (!box) return;
+    const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const rel = await window.api.wiz3dListReleases();
+    const cur = rel?.current?.tag;
+    const custom = new Map((rel?.custom || []).map(c => [c.tag, c]));
+    const tags = (rel?.downloaded || []).sort((a, b) => (custom.has(a) - custom.has(b)) || b.localeCompare(a));
+    box.innerHTML = tags.length ? tags.map(t => {
+        const c = custom.get(t);
+        return `<div class="shortcut-row" style="grid-template-columns:1fr auto;">
+            <span><span style="color:var(--text-primary);">${esc(c ? c.name : t)}</span>${c ? ' <span style="color:var(--text-dim);">(custom build)</span>' : ''}${t === cur ? ' <span style="color:var(--teal);">default</span>' : ''}</span>
+            <span style="display:flex;gap:6px;">
+                ${t === cur ? '' : `<button class="modal-cancel" style="font-size:10.5px;padding:4px 10px;" onclick="setWiz3DDefault('${t}')">Use by default</button>`}
+                ${c && t !== cur ? `<button class="modal-cancel" style="font-size:10.5px;padding:4px 10px;" onclick="removeWiz3DCustom('${t}')">Remove</button>` : ''}
+            </span></div>`;
+    }).join('') : '<div style="font-size:11px;color:var(--text-dim);">None yet.</div>';
+}
+window.addWiz3DCustom = async function(kind) {
+    const r = await window.api.wiz3dAddCustom(kind);
+    if (r?.canceled) return;
+    showNotice(r.success ? `Added ${r.name}. Pick it on a game page, or make it the default here.` : `Could not add that build: ${r.message}`);
+    _wiz3dReleases = null;
+    renderWiz3DBuilds();
+};
+window.removeWiz3DCustom = async function(tag) {
+    if (!confirm('Remove this custom wiz3D build from Stereopticon? Games already set up with it keep their files.')) return;
+    const r = await window.api.wiz3dRemoveCustom(tag);
+    if (!r.success) showNotice(r.message);
+    _wiz3dReleases = null;
+    renderWiz3DBuilds();
+};
+window.setWiz3DDefault = async function(tag) {
+    const r = await window.api.wiz3dSetDefault(tag);
+    if (!r.success) { showNotice(r.message); return; }
+    _wiz3dReleases = null;
+    renderWiz3DBuilds();
+    refreshWiz3DStatus();
+};
 
 // ── Stereo Loom ──────────────────────────────────────────────────
 async function refreshLoomStatus() {
@@ -4623,7 +4711,7 @@ window.switchSettingsTab = async function(tab) {
     if (tab === 'monitors') await renderMonitorsTab();
     if (tab === 'about') await renderAboutTab();
     if (tab === 'news') await renderNewsTab();
-    if (tab === 'general') refreshLoomStatus();
+    if (tab === 'general') { refreshLoomStatus(); renderGameLibrariesPanel(); renderWiz3DBuilds(); }
 };
 
 // ── HT axes per-game + experimental roll (Phase 2e) ──────────
@@ -5764,28 +5852,59 @@ function loadSgPrefs() {
 
 
 
-async function runScanAll() {
+// Find installed games on every launcher (Steam, Epic, GOG, Ubisoft, EA,
+// Xbox, Battle.net and others) without blocking the window. Used at
+// start-up and by the ↻ button next to the search box.
+let _lastScan = null;
+async function runScanAll({ quiet = false } = {}) {
     const btn = document.getElementById('scanAllBtn');
-    if (btn) { btn.style.animation = 'spin 1s linear infinite'; btn.style.display = 'inline-flex'; btn.title = 'Scanning…'; }
+    if (btn) { btn.style.animation = 'spin 1s linear infinite'; btn.style.display = 'inline-flex'; btn.title = 'Looking for installed games…'; }
     try {
-            const targets = gamesData.map(g => ({
-        id:          g.id,
-        title:       g.title,
-        exeName:     g.exe_name || g.fixes?.[0]?.exe_name || null,
-        steamAppId:  g.steam_app_id || null,   // ← ADD THIS
-    }));
-        window._scannedPaths = await window.api.gameScanAll(targets);
-        // Update current game path if it wasn't set
-        if (selectedGame) autoScanGamePath(selectedGame);
-        // Re-render sidebar so availability tiers update
+        const r = await window.api.gameScanAll();
+        if (r?.error) throw new Error(r.error);
+        _lastScan = r;
+        window._scannedPaths = r.paths || {};
+        try { localStorage.setItem('stereopticon.scanCache.v1', JSON.stringify({ ts: Date.now(), paths: window._scannedPaths })); } catch {}
+        // Installed games the catalogue does not list: replace the previous
+        // scan's rows, keep games added by hand.
+        if (Array.isArray(r.rows)) {
+            const fresh = new Map(r.rows.map(x => [x.id, x]));
+            gamesData = gamesData.filter(g => !g.user_game || /^user_/.test(g.id) || fresh.has(g.id));
+            for (const row of r.rows) {
+                const have = gamesData.find(g => g.id === row.id);
+                if (have) Object.assign(have, row); else gamesData.push(row);
+            }
+        }
+        if (selectedGame && !getInstallPath()) autoScanGamePath(selectedGame);
         renderSidebar(gamesData);
-        const n = Object.keys(window._scannedPaths || {}).length;
-        if (btn) btn.title = `Scan complete — ${n} game${n !== 1 ? 's' : ''} found`;
+        const n = Object.keys(window._scannedPaths).length + (r.rows?.length || 0);
+        if (btn) btn.title = `Found ${n} installed game${n !== 1 ? 's' : ''}. Click to look again.`;
+        if (!quiet) showNotice(`Found ${n} installed games.`);
+        renderGameLibrariesPanel();
     } catch (e) {
-        if (btn) btn.title = `Scan failed: ${e.message}`;
+        if (btn) btn.title = `Could not look for games: ${e.message}`;
+        if (!quiet) showNotice(`Could not look for games: ${e.message}`);
     } finally {
         if (btn) btn.style.animation = '';
     }
+}
+window.runScanAll = runScanAll;
+
+// Settings → General → Game libraries: what was found where, and any Steam
+// library that is listed but not connected (an unplugged drive).
+const SOURCE_NAMES = { steam: 'Steam', epic: 'Epic Games', gog: 'GOG', ubisoft: 'Ubisoft Connect',
+                       xbox: 'Xbox app', windows: 'Other (EA app, Battle.net, standalone)' };
+async function renderGameLibrariesPanel() {
+    const box = document.getElementById('gameLibrariesBody');
+    if (!box) return;
+    const r = _lastScan || await window.api.gameLastScan();
+    if (!r) { box.textContent = 'Not scanned yet.'; return; }
+    const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const counts = Object.entries(r.sources || {}).sort((x, y) => y[1] - x[1])
+        .map(([k, v]) => `<div class="shortcut-row"><kbd>${esc(SOURCE_NAMES[k] || k)}</kbd><span>${v} game${v !== 1 ? 's' : ''}</span></div>`).join('');
+    const offline = (r.steamLibraries || []).filter(l => !l.available);
+    box.innerHTML = (counts || '<div style="font-size:11px;color:var(--text-dim);">No games found yet.</div>') +
+        (offline.length ? `<div style="font-size:10.5px;color:var(--text-dim);margin-top:8px;line-height:1.5;">Steam also lists ${offline.map(l => esc(l.path)).join(', ')}, which is not connected, so its games are not shown until the drive is back.</div>` : '');
 }
 
 // ─── 3D BUTTON ───────────────────────────────────────────────────────────────

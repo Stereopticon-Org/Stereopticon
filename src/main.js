@@ -949,8 +949,9 @@ ipcMain.handle('appUpdate:install', async (event) => {
         logger.info('update', `Installing Stereopticon ${r.version}`);
         return { success: true, ...r };
     } catch (e) {
-        logger.warn('update', 'Update failed:', e.message);
-        return { success: false, message: e.message };
+        logger.warn('update', 'Update failed:', e.stack || e.message);
+        // Keep the message short; the full error is in the log.
+        return { success: false, message: String(e.message || e).split('\n')[0].slice(0, 200) };
     }
 });
 

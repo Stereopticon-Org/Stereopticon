@@ -955,7 +955,12 @@ async function offerWiz3DUpdateHere(fixId) {
         const wanted = prefs?.wiz3dVersion || st?.installed?.tag;
         const btn = document.getElementById('btnInstallFix');
         if (!btn || selectedProfile?.id !== fixId || selectedGame?.id !== gameId || !record?.wiz3dVersion) return;
-        const pathChanged    = (record.wiz3dPath || '') !== (prefs?.wiz3dPath || '');
+        // Compare render paths as keys: the installed one (or the catalogue's
+        // when none was recorded) against the chosen or default one.
+        const catalogue = recommendedWiz3DPathKey(selectedProfile, selectedGame);
+        const installedPath = record.wiz3dPath || catalogue;
+        const wantedPath    = prefs?.wiz3dPath || defaultWiz3DPathKey(selectedProfile, selectedGame);
+        const pathChanged    = !!wantedPath && installedPath !== wantedPath;
         const versionChanged = !!wanted && record.wiz3dVersion !== wanted;
         if (!pathChanged && !versionChanged) return;
         btn.textContent = pathChanged
@@ -988,10 +993,39 @@ function recommendedWiz3DPathKey(fix, game) {
     }
 }
 
+// A wiz3D release folder ("HD3D/32-bit", "Stereo-Injector/DX10-11/64-bit") as a path key.
+function wiz3DPathKeyFromFolder(folder) {
+    const f = String(folder || '');
+    if (/^HD3D/i.test(f)) return 'hd3d';
+    if (/OpenGL/i.test(f)) return 'opengl';
+    let m = /3D-Vision-Direct\/DX(9|10|11)/i.exec(f);
+    if (m) return `3dv-dx${m[1]}`;
+    if (/DX10-11/i.test(f)) return 'injector-dx11';
+    m = /Stereo-Injector\/DX(7|8|9)/i.exec(f);
+    return m ? `injector-dx${m[1]}` : null;
+}
+
+// The path stereopticon.org's reports say works, when they say it works.
+function siteKnownWiz3DPath(game) {
+    const e = siteEntryFor(game);
+    if (!e || !['working', 'mostly', 'partial'].includes(e.status)) return null;
+    return wiz3DPathKeyFromFolder((e.install || [])[0]);
+}
+
+// What gets installed when the page has no choice of its own: the path the
+// website reports working, else the catalogue's.
+function defaultWiz3DPathKey(fix, game) {
+    return siteKnownWiz3DPath(game) || recommendedWiz3DPathKey(fix, game);
+}
+
+// Graphics APIs each render path drives, to point at paths the game can use.
+const PATH_APIS = {
+    'injector-dx7': ['dx7'], 'injector-dx8': ['dx8'], 'injector-dx9': ['dx9'], 'injector-dx11': ['dx10', 'dx11'],
+    '3dv-dx9': ['dx9'], '3dv-dx10': ['dx10'], '3dv-dx11': ['dx11'], 'opengl': ['opengl'], 'hd3d': [],
+};
+
 function wiz3dOptionsHtml() {
     if (!selectedProfile || !isWiz3DType(selectedProfile.type)) return '';
-    const exeBtn = selectedGame?.user_game || /^(steam|user)_/.test(selectedGame?.id || '')
-        ? `<button class="link-btn" onclick="chooseExeForGame()" title="${selectedGame.exe_name || 'No .exe found yet'}">Choose .exe</button>` : '';
     const removeBtn = /^user_/.test(selectedGame?.id || '')
         ? `<button class="link-btn" onclick="removeUserGame()">Remove from library</button>` : '';
     return `
@@ -1003,13 +1037,13 @@ function wiz3dOptionsHtml() {
                 </select>
             </div>
             <div>
-                <label title="Which part of wiz3D is installed. The recommended path is the one wiz3D's list gives for this game.">Render path</label>
+                <label title="Which part of wiz3D is installed. The recommended path is the one reported working on stereopticon.org, or wiz3D's own list.">Render path</label>
                 <select id="wiz3dPathSelect" class="csel-target" style="margin-top:0;width:100%;" onchange="onWiz3DPathChange(this.value)">
                     <option value="">Loading…</option>
                 </select>
             </div>
             <div class="wiz3d-actions">
-                ${exeBtn}${removeBtn}
+                ${removeBtn}
                 <button class="link-btn" style="border-color:var(--teal-border);color:var(--teal);" onclick="openReportModal('game')">Report a result</button>
             </div>
         </div>`;
@@ -1040,12 +1074,18 @@ async function loadWiz3DGameOptions() {
             `${r.tag}${r.prerelease ? ' (beta)' : ''}${downloaded.has(r.tag) ? '' : ' (will download)'}</option>`).join('');
     if (!rel?.success && rel?.message) vSel.title = `Could not list wiz3D releases: ${rel.message}`;
 
-    // Render paths: the recommended one first.
-    const rec = recommendedWiz3DPathKey(selectedProfile, selectedGame);
+    // Render paths: the recommended one first (the website's known-good path
+    // when there is one), then the others, marking the ones the game's
+    // graphics APIs can use.
+    const known = siteKnownWiz3DPath(selectedGame);
+    const rec = known || recommendedWiz3DPathKey(selectedProfile, selectedGame);
     const recLabel = paths.find(p => p.key === rec)?.label || 'automatic';
-    pSel.innerHTML = `<option value="">Recommended: ${recLabel}</option>` +
-        paths.filter(p => p.key !== rec).map(p =>
-            `<option value="${p.key}" ${p.key === prefs.wiz3dPath ? 'selected' : ''}>${p.label}</option>`).join('');
+    const apis = new Set(selectedGame.graphics_apis || []);
+    pSel.innerHTML = `<option value="">Recommended: ${recLabel}${known ? ' (reported working)' : ''}</option>` +
+        paths.filter(p => p.key !== rec).map(p => {
+            const fits = (PATH_APIS[p.key] || []).some(a => apis.has(a));
+            return `<option value="${p.key}" ${p.key === prefs.wiz3dPath ? 'selected' : ''}>${p.label}${fits ? ' · game uses this API' : ''}</option>`;
+        }).join('');
 }
 
 window.onWiz3DVersionChange = async function(tag) {
@@ -1057,11 +1097,16 @@ window.onWiz3DPathChange = async function(key) {
     if (installedFixIds.has(selectedProfile.id)) offerWiz3DUpdateHere(selectedProfile.id);
 };
 
-window.chooseExeForGame = async function() {
+window.chooseExeForGame = async function(fromDetails = false) {
     const r = await window.api.chooseGameExe(selectedGame.id);
     if (!r?.success) { if (r?.message) showResult(false, r.message); return; }
     Object.assign(selectedGame, r.game, { _tryFix: null });
     setInstallPath(r.game.install_dir || getInstallPath());
+    if (fromDetails) {
+        const exe = document.getElementById('detailsExe');
+        if (exe) exe.value = r.game.default_path || r.game.exe_name || '';
+        return;
+    }
     _continueSelectGame(selectedGame);
 };
 window.removeUserGame = async function() {
@@ -1078,6 +1123,97 @@ window.addGameFromExe = async function() {
     if (!row) { row = r.row || { ...r.game, user_game: true, fix_types: [] }; gamesData.push(row); }
     renderSidebar(gamesData);
     selectGame(row);
+    // Straight on to naming it, matching it and finding its artwork.
+    setTimeout(() => openDetailsModal(true), 400);
+};
+
+// ── Game details: name, catalogue match, API, artwork, exe ───────
+function isAddedGame(game) { return /^(steam|user)_/.test(game?.id || ''); }
+
+window.openDetailsModal = async function(justAdded = false) {
+    if (!selectedGame) return;
+    const g = selectedGame;
+    const prefs = await window.api.getGamePrefs(g.id);
+    const d = prefs.details || {};
+    document.getElementById('detailsSubtitle').textContent = justAdded
+        ? 'Name the game, and say which listed game it is if it is one, so it gets that game\'s wiz3D profile.'
+        : 'Fix the name, artwork or API if the game was matched wrongly.';
+    document.getElementById('detailsTitle').value = d.title || g.title || '';
+    document.getElementById('detailsApi').value = d.api || '';
+    document.getElementById('detailsSteamId').value = d.steam_app_id || g.steam_app_id || '';
+    document.getElementById('detailsArtSearch').value = d.title || g.title || '';
+    document.getElementById('detailsArtResults').innerHTML = '';
+    document.getElementById('detailsStatus').textContent = '';
+
+    // Matching to a catalogue game only makes sense for games added from
+    // this PC; catalogue games already are themselves.
+    const matchBlock = document.getElementById('detailsMatchBlock');
+    matchBlock.style.display = isAddedGame(g) ? '' : 'none';
+    if (isAddedGame(g)) {
+        const list = document.getElementById('detailsMatchList');
+        if (!list.childElementCount) {
+            list.innerHTML = gamesData.filter(x => !x.user_game && (x.fix_types || []).some(isWiz3DType))
+                .map(x => `<option value="${String(x.title).replace(/"/g, '&quot;')}"></option>`).join('');
+        }
+        const matched = d.match_id && gamesData.find(x => x.id === d.match_id);
+        document.getElementById('detailsMatch').value = matched ? matched.title : '';
+    }
+    const exeBlock = document.getElementById('detailsExeBlock');
+    exeBlock.style.display = isAddedGame(g) ? '' : 'none';
+    document.getElementById('detailsExe').value = g.default_path || g.exe_name || '';
+
+    document.getElementById('detailsModal').style.display = 'flex';
+    if (justAdded) searchDetailsArt();
+};
+window.closeDetailsModal = function() {
+    document.getElementById('detailsModal').style.display = 'none';
+};
+window.searchDetailsArt = async function() {
+    const term = document.getElementById('detailsArtSearch').value.trim();
+    const out = document.getElementById('detailsArtResults');
+    if (!term) return;
+    out.innerHTML = '<div style="font-size:11px;color:var(--text-dim);">Searching Steam…</div>';
+    const r = await window.api.steamSearch(term);
+    if (!r?.items?.length) { out.innerHTML = `<div style="font-size:11px;color:var(--text-dim);">${r?.message || 'Nothing found on Steam.'}</div>`; return; }
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const cur = document.getElementById('detailsSteamId').value;
+    out.innerHTML = r.items.slice(0, 8).map(i =>
+        `<div class="art-pick${i.id === cur ? ' selected' : ''}" data-id="${i.id}" data-name="${esc(i.name)}">` +
+        `<img src="https://cdn.akamai.steamstatic.com/steam/apps/${i.id}/header.jpg" alt=""><span>${esc(i.name)}</span></div>`).join('');
+    out.querySelectorAll('.art-pick').forEach(el => el.onclick = () => {
+        out.querySelectorAll('.art-pick').forEach(x => x.classList.remove('selected'));
+        el.classList.add('selected');
+        document.getElementById('detailsSteamId').value = el.dataset.id;
+    });
+};
+async function applyGameDetails(details) {
+    const r = await window.api.setGameDetails(selectedGame.id, details);
+    const row = gamesData.find(x => x.id === selectedGame.id);
+    if (row && r?.row) Object.assign(row, { title: r.row.title, steam_app_id: r.row.steam_app_id, graphics_apis: r.row.graphics_apis });
+    if (r?.game) Object.assign(selectedGame, r.game, { _tryFix: null, _full: true });
+    closeDetailsModal();
+    renderSidebar(gamesData);
+    _continueSelectGame(selectedGame);
+}
+window.saveGameDetails = async function() {
+    const matchTitle = document.getElementById('detailsMatch').value.trim();
+    let match_id = '';
+    if (isAddedGame(selectedGame) && matchTitle) {
+        const m = gamesData.find(x => !x.user_game && x.title.toLowerCase() === matchTitle.toLowerCase());
+        if (!m) { document.getElementById('detailsStatus').innerHTML = '<span style="color:var(--warn);">Pick a game from the list, or leave "Same game as" empty.</span>'; return; }
+        match_id = m.id;
+    }
+    const title = document.getElementById('detailsTitle').value.trim();
+    await applyGameDetails({
+        title: title && title !== selectedGame.title ? title : (title || ''),
+        api: document.getElementById('detailsApi').value,
+        steam_app_id: document.getElementById('detailsSteamId').value.trim(),
+        match_id,
+    });
+};
+window.resetGameDetails = async function() {
+    if (!confirm('Go back to the name, artwork and API from the catalogue?')) return;
+    await applyGameDetails({});
 };
 
 async function reinstallWiz3DHere() {
@@ -1407,7 +1543,9 @@ async function handleInstallClick() {
     const removeListener = window.api.onInstallProgress(onProgress);
     setProgress(0, 'Installing fix…', null);
     try {
-        const result = await window.api.installFix(selectedProfile, selectedGame.id, gamePath, selectedGame.exe_name);
+        const known = isWiz3DType(selectedProfile.type) ? siteKnownWiz3DPath(selectedGame) : null;
+        const result = await window.api.installFix(selectedProfile, selectedGame.id, gamePath, selectedGame.exe_name,
+            known && known !== recommendedWiz3DPathKey(selectedProfile, selectedGame) ? known : null);
         setProgress(100, result.success ? 'Installation complete' : 'Install failed', null);
         showResult(result.success, result.message || (result.success ? 'Fix installed.' : 'Install failed.'));
         if (result.success) {
@@ -2184,6 +2322,11 @@ async function init() {
 
         renderSidebar(gamesData);
         autoSelectDisplayFromDetection();
+        setTimeout(() => {
+            loadSiteGames().catch(e => console.warn('[site]', e));
+            autoDownloadWiz3D().catch(e => console.warn('[wiz3D auto]', e));
+            checkAppUpdate(false).catch(() => {});
+        }, 800);
         // Background game path scan. Wait a beat so the UI paints first.
         // If we hydrated from cache, this becomes a freshness check; if we
         // didn't, it's the first scan since install.
@@ -2632,20 +2775,11 @@ const FILTER_GROUPS = [
         { id: 'installed',   label: 'Installed',         icon: '●' },
         { id: 'recent',      label: 'Recently played',   icon: '↻', sort: 'recent' },
     ]},
-    // How the game gets its stereo: the native paths first (the game renders
-    // both eyes itself; wiz3D only enables them), then automatic injection.
-    { title: 'Stereo type', items: [
-        { id: 'mod_hd3d',     label: 'Native: AMD HD3D',               icon: '◆' },
-        { id: 'mod_3dv_dm',   label: 'Native: 3D Vision Direct Mode',  icon: '◈' },
-        { id: 'mod_ogl_qbs',  label: 'Native: OpenGL quad-buffer',     icon: '▣' },
-        { id: 'mod_wiz3d',    label: 'Stereo Injector (automatic)',    icon: '✦' },
-    ]},
-    { title: 'wiz3D status', items: [
-        { id: 'wiz3d_working',  label: 'Working',          icon: '●' },
-        { id: 'wiz3d_partial',  label: 'Partly working',   icon: '◐' },
-        { id: 'wiz3d_untested', label: 'Untested',         icon: '○' },
-        { id: 'wiz3d_unknown',  label: 'Not rated',        icon: '◌' },
-        { id: 'wiz3d_broken',   label: 'Not working yet',  icon: '✕' },
+    // Games that render both eyes themselves; wiz3D only switches it on.
+    { title: 'Native 3D Games', items: [
+        { id: 'mod_hd3d',     label: 'AMD HD3D',                icon: '◆' },
+        { id: 'mod_3dv_dm',   label: '3D Vision Direct Mode',   icon: '◈' },
+        { id: 'mod_ogl_qbs',  label: 'OpenGL quad-buffer',      icon: '▣' },
     ]},
     { title: 'Graphics API', items: [
         { id: 'api_dx7',    label: 'DirectX 7 and older', icon: '▫' },
@@ -2656,6 +2790,14 @@ const FILTER_GROUPS = [
         { id: 'api_dx12',   label: 'DirectX 12',          icon: '▪' },
         { id: 'api_opengl', label: 'OpenGL',              icon: '◇' },
         { id: 'api_vulkan', label: 'Vulkan',              icon: '◇' },
+    ]},
+    { title: 'wiz3D status', items: [
+        { id: 'wiz3d_working',  label: 'Working',          icon: '●' },
+        { id: 'wiz3d_mostly',   label: 'Mostly working',   icon: '◕' },
+        { id: 'wiz3d_partial',  label: 'Partly working',   icon: '◐' },
+        { id: 'wiz3d_untested', label: 'Untested',         icon: '○' },
+        { id: 'wiz3d_unknown',  label: 'Not rated',        icon: '◌' },
+        { id: 'wiz3d_broken',   label: 'Not working yet',  icon: '✕' },
     ]},
     { title: 'Output', otherTools: true, items: [
         { id: 'sr_weave',         label: 'Simulated Reality',   icon: '◈' },
@@ -2789,7 +2931,7 @@ function visibleFilterItems(group) {
 function buildFilterPredicate(id) {
     if (id.startsWith('wiz3d_')) {
         const status = id.slice('wiz3d_'.length);
-        return g => g.wiz3d_status === status;
+        return g => (g.site_status || g.wiz3d_status) === status;
     }
     if (id.startsWith('api_')) {
         const api = id.slice('api_'.length);
@@ -3224,15 +3366,44 @@ function buildDeprecatedWarning(p) {
         <div><strong>Deprecated / Discontinued</strong><br>Documented for historical reference only.${extra}</div></div>`;
 }
 
+// ── stereopticon.org: latest tested status per game ──────────────
+let _siteByName = null;
+const siteKey = t => String(t || '').toLowerCase().replace(/^the\s+/, '').replace(/[^a-z0-9]/g, '');
+function siteEntryFor(game) {
+    if (!_siteByName || !game) return null;
+    return _siteByName.get(siteKey(game.matched_title || game.title)) || null;
+}
+async function loadSiteGames() {
+    const r = await window.api.siteGames();
+    if (!r?.success) { console.warn('[site] games:', r?.message); return; }
+    _siteByName = new Map((r.data?.games || []).map(g => [siteKey(g.name), g]));
+    for (const row of gamesData || []) {
+        const e = siteEntryFor(row);
+        if (e) row.site_status = e.status; else delete row.site_status;
+    }
+    renderSidebar(gamesData);
+    if (selectedGame && selectedProfile) { renderDetailView(); updateBottomBar(); }
+}
+
 // How well wiz3D runs this game, from wiz3D's own compatibility list.
 const WIZ3D_STATUS_TEXT = {
     working:  { label: 'Working',  colour: 'var(--teal)',   tip: 'Reported working with wiz3D.' },
+    mostly:   { label: 'Mostly working', colour: 'var(--teal)', tip: 'Works, with small problems.' },
     partial:  { label: 'Partly working', colour: 'var(--warn)', tip: 'Works with known problems; see the notes.' },
     untested: { label: 'Untested', colour: 'var(--text-dim)', tip: 'Listed by wiz3D but not yet tested.' },
     broken:   { label: 'Not working yet', colour: 'var(--danger)', tip: 'Known not to work with the current wiz3D.' },
 };
 function wiz3dStatusHtml(fix) {
     if (!fix || !isWiz3DType(fix.type)) return '';
+    // The website's status is the latest tested result, so it comes first.
+    const site = siteEntryFor(selectedGame);
+    if (site) {
+        const t = WIZ3D_STATUS_TEXT[site.status] || { label: site.status, colour: 'var(--text-dim)', tip: '' };
+        const folder = (site.install || [])[0];
+        const tip = `Latest tested result on stereopticon.org${folder ? `, using ${folder}` : ''}.${site.notes ? ' ' + site.notes : ''}`.replace(/"/g, '&quot;');
+        return `<div class="detail-hero-credits" title="${tip}">wiz3D: <span style="color:${t.colour};font-weight:600;">${t.label}</span>` +
+               ` <a href="#" class="fix-credit-link" onclick="window.api.openUrl('https://stereopticon.org/#game-${site.slug}');return false;">on stereopticon.org ↗</a></div>`;
+    }
     const s = WIZ3D_STATUS_TEXT[fix.wiz3d_status] ||
               { label: 'Unknown', colour: 'var(--text-dim)', tip: 'From the 3D compatibility database; wiz3D has not rated it.' };
     return `<div class="detail-hero-credits" title="${s.tip}">wiz3D: <span style="color:${s.colour};font-weight:600;">${s.label}</span></div>`;
@@ -3319,6 +3490,7 @@ function renderDetailView() {
                     <button id="btnInstallFix" class="hero-btn hero-btn-secondary" onclick="handleInstallClick()">⇩ Install Fix</button>
                     <button id="btnLaunchGame" class="hero-btn hero-btn-primary" onclick="handleLaunchClick()">▶ Launch</button>
                     <button id="btnUninstallMain" class="hero-btn hero-btn-ghost" title="Uninstall Fix" onclick="handleUninstallClick()" style="display:none;">🗑</button>
+                    <button class="hero-btn hero-btn-ghost" title="Game details: name, artwork, API" onclick="openDetailsModal()">⚙</button>
                 </div>
             </div>
         </div>
@@ -4191,8 +4363,16 @@ window.openSettingsModal = async function() {
         const log  = document.getElementById('detailedLoggingToggle');
         if (beta) beta.checked = s.wiz3dChannel === 'beta';
         if (log)  log.checked  = !!s.detailedLogging;
+        const auto = document.getElementById('autoWiz3dToggle');
+        const appBeta = document.getElementById('appBetaToggle');
+        if (auto)    auto.checked    = s.autoWiz3d !== false;
+        if (appBeta) appBeta.checked = s.appChannel === 'beta';
+        // Library visibility and other experiments: running from source only.
+        const info = await window.api.getAppVersion?.();
+        const dev = document.getElementById('devOnlySettings');
+        if (dev) dev.style.display = info?.isPackaged ? 'none' : '';
     } catch {}
-    switchSettingsTab('display');
+    switchSettingsTab('general');
 };
 
 window.toggleWiz3DBeta = async function(on) {
@@ -4202,6 +4382,126 @@ window.toggleWiz3DBeta = async function(on) {
 };
 window.toggleDetailedLogging = async function(on) {
     await window.api.setSettings({ detailedLogging: !!on });
+};
+window.toggleAutoWiz3D = async function(on) {
+    await window.api.setSettings({ autoWiz3d: !!on });
+    if (on) autoDownloadWiz3D();
+};
+window.toggleAppBeta = async function(on) {
+    await window.api.setSettings({ appChannel: on ? 'beta' : 'stable' });
+    checkAppUpdate(true);
+};
+
+// Keep wiz3D current: download it the first time, and new releases on the
+// chosen channel after that (unless turned off in Settings).
+async function autoDownloadWiz3D() {
+    const s = await window.api.getSettings();
+    if (s.autoWiz3d === false) return;
+    const st = await window.api.wiz3dStatus();
+    if (!st || st.error || !st.updateAvailable) return;
+    // Never go backwards automatically (a beta installed while on stable).
+    if (st.installed?.prerelease && st.channel === 'stable') return;
+    showNotice(st.installed ? `Downloading wiz3D ${st.latest.tag}…` : 'Downloading wiz3D for the first time…');
+    const r = await window.api.wiz3dUpdate();
+    _wiz3dReleases = null;
+    showNotice(r.success
+        ? `wiz3D ${r.tag} is ready.${st.installed ? ' Games set up with an older version offer to switch on their page.' : ''}`
+        : `wiz3D could not be downloaded: ${r.message}`);
+    refreshWiz3DStatus();
+}
+
+// ── Stereopticon updates ─────────────────────────────────────────
+let _appUpdate = null;
+async function checkAppUpdate(manual) {
+    const status = document.getElementById('appUpdateStatus');
+    const btn = document.getElementById('appUpdateBtn');
+    if (manual && status) status.textContent = 'Checking…';
+    const r = await window.api.appUpdateCheck();
+    _appUpdate = r;
+    if (!r?.success) {
+        if (status) status.textContent = manual ? `Could not check for updates: ${r?.message}` : '';
+        return r;
+    }
+    if (status) {
+        status.textContent = r.updateAvailable
+            ? `Version ${r.latest.version}${r.latest.prerelease ? ' (beta)' : ''} is available.`
+            : r.latest ? `Up to date (${r.channel === 'beta' ? 'beta channel' : 'stable releases'}).` : 'No releases published yet.';
+    }
+    if (btn) {
+        btn.textContent = r.updateAvailable ? (r.canInstall ? 'Update now' : 'Download') : 'Check for updates';
+        btn.onclick = r.updateAvailable ? installAppUpdate : () => checkAppUpdate(true);
+    }
+    if (!manual && r.updateAvailable) {
+        showNotice(`Stereopticon ${r.latest.version} is available. Settings → About to update.`);
+    }
+    return r;
+}
+async function installAppUpdate() {
+    const r = _appUpdate;
+    if (!r?.updateAvailable) return;
+    if (!r.canInstall) { window.api.openUrl(r.latest.url); return; }   // portable or from source
+    const status = document.getElementById('appUpdateStatus');
+    const btn = document.getElementById('appUpdateBtn');
+    if (btn) btn.disabled = true;
+    const stop = window.api.onAppUpdateProgress(p => { if (status) status.textContent = `Downloading ${r.latest.version}… ${p}%`; });
+    const res = await window.api.appUpdateInstall();
+    stop();
+    if (!res.success) {
+        if (status) status.textContent = `Update failed: ${res.message}`;
+        if (btn) btn.disabled = false;
+    } else if (status) {
+        status.textContent = 'Restarting to install the update…';
+    }
+}
+
+// ── About tab ────────────────────────────────────────────────────
+async function renderAboutTab() {
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const info = await window.api.getAppVersion();
+    document.getElementById('aboutVersion').textContent = `Stereopticon ${info?.version ? 'v' + info.version : ''}`;
+    checkAppUpdate(true);
+
+    // wiz3D versions on this PC, and which games are pinned to one.
+    const rel = await window.api.wiz3dListReleases();
+    const cur = rel?.current?.tag;
+    const box = document.getElementById('aboutWiz3dVersions');
+    const downloaded = (rel?.downloaded || []).sort().reverse();
+    box.innerHTML = downloaded.length
+        ? downloaded.map(t => `${esc(t)}${t === cur ? ' <span style="color:var(--teal);">(in use)</span>' : ''}`).join('<br>') +
+          (rel?.releases?.[0] && rel.releases[0].tag !== cur ? `<br><span style="color:var(--text-dim);">Newest published: ${esc(rel.releases[0].tag)}</span>` : '')
+        : 'None downloaded yet.';
+
+    // News from stereopticon.org (posts and project releases).
+    const newsBox = document.getElementById('aboutNews');
+    const n = await window.api.siteNews();
+    const items = (n?.data?.items || []).slice(0, 6);
+    newsBox.innerHTML = items.length ? items.map(it => {
+        const url = it.url || `https://stereopticon.org/#post-${it.id}`;
+        return `<div class="news-item" data-url="${esc(url)}">
+            <div class="news-item-title">${esc(it.title)}</div>
+            <div class="news-item-meta">${esc(it.date)}${it.project ? ' · ' + esc(it.project) : ''}${it.prerelease ? ' · beta' : ''}</div>
+            ${it.summary ? `<div class="news-item-sum">${esc(it.summary)}</div>` : ''}
+        </div>`;
+    }).join('') : `<div style="font-size:11px;color:var(--text-dim);">${n?.success === false ? 'Could not reach stereopticon.org.' : 'No news yet.'}</div>`;
+    newsBox.querySelectorAll('.news-item').forEach(el => el.onclick = () => window.api.openUrl(el.dataset.url));
+}
+
+// ── Stereo Loom ──────────────────────────────────────────────────
+async function refreshLoomStatus() {
+    const st = await window.api.loomStatus();
+    const text = document.getElementById('loomStatusText');
+    const btn = document.getElementById('loomBtn');
+    if (text) text.textContent = st?.installed ? `Stereo Loom ${st.installed.tag}` : 'Stereo Loom is not downloaded';
+    if (btn) btn.textContent = st?.installed ? 'Open' : 'Download and open';
+}
+window.openStereoLoom = async function() {
+    const st = await window.api.loomStatus();
+    if (!st?.installed && !confirm('Download Stereo Loom (about 7 MB) from GitHub and start it?')) return;
+    const stop = window.api.onLoomProgress(p => showNotice(`Downloading Stereo Loom… ${p}%`));
+    const r = await window.api.loomOpen();
+    stop();
+    showNotice(r.success ? `Stereo Loom ${r.tag} started. It runs in the system tray.` : `Stereo Loom could not start: ${r.message}`);
+    refreshLoomStatus();
 };
 
 // ── Report a result (game page) or a problem (Settings) ──────────
@@ -4249,6 +4549,7 @@ window.submitReport = async function() {
         game:  isGame ? { id: selectedGame.id, title: selectedGame.title, exe: selectedGame.exe_name || '' } : null,
         fix:   isGame && selectedProfile ? { id: selectedProfile.id, name: selectedProfile.name, type: selectedProfile.type } : null,
         fixId: isGame ? selectedProfile?.id : null,
+        site_name: isGame ? (siteEntryFor(selectedGame)?.name || '') : '',
         display: isGame ? (document.getElementById('displayLabelInline')?.textContent || selectedDisplay || '') : '',
         output:  isGame ? (getEffectiveOutputIdFromSelects?.() || '') : '',
     });
@@ -4287,6 +4588,8 @@ window.switchSettingsTab = async function(tab) {
     });
 
     if (tab === 'monitors') await renderMonitorsTab();
+    if (tab === 'about') await renderAboutTab();
+    if (tab === 'general') refreshLoomStatus();
 };
 
 // ── HT axes per-game + experimental roll (Phase 2e) ──────────
@@ -4506,7 +4809,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (dp) dp.checked = isShowDeprecated();
     const ot = document.getElementById('showOtherToolsToggle');
     if (ot) ot.checked = isShowOtherTools();
-    refreshWiz3DStatus({ notifyUpdate: true });
+    refreshWiz3DStatus();   // new releases are downloaded by autoDownloadWiz3D() at start-up
 });
 
 // ── wiz3D version panel (Settings) and update notice ─────────

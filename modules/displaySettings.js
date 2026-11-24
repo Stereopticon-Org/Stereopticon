@@ -23,7 +23,7 @@ function regQuery(keyPath, valueName) {
     try {
         const out = execSync(
             `reg query "${keyPath}" /v "${valueName}"`,
-            { encoding: 'utf8', timeout: 3000, stdio: ['pipe','pipe','pipe'] }
+            { windowsHide: true, encoding: 'utf8', timeout: 3000, stdio: ['pipe','pipe','pipe'] }
         );
         // Output looks like:
         //   HKEY_LOCAL_MACHINE\SOFTWARE\...
@@ -46,7 +46,7 @@ function regWrite(keyPath, valueName, type, data) {
         const val = type === 'REG_DWORD' ? String(data) : data;
         execSync(
             `reg add "${keyPath}" /v "${valueName}" /t ${type} /d ${val} /f`,
-            { encoding: 'utf8', timeout: 5000, stdio: ['pipe','pipe','pipe'] }
+            { windowsHide: true, encoding: 'utf8', timeout: 5000, stdio: ['pipe','pipe','pipe'] }
         );
         return { success: true };
     } catch (e) {
@@ -60,7 +60,7 @@ function regWrite(keyPath, valueName, type, data) {
 
 function regExists(keyPath) {
     try {
-        execSync(`reg query "${keyPath}"`, { encoding: 'utf8', timeout: 2000, stdio: ['pipe','pipe','pipe'] });
+        execSync(`reg query "${keyPath}"`, { windowsHide: true, encoding: 'utf8', timeout: 2000, stdio: ['pipe','pipe','pipe'] });
         return true;
     } catch {
         return false;

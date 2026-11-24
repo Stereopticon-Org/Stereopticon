@@ -16,8 +16,8 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -40,11 +40,16 @@ jobs:
         run: npm run dist -- --publish ${{ startsWith(github.ref, 'refs/tags/') && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Keep the build as a workflow artifact
-        uses: actions/upload-artifact@v4
+      # Two downloads on the run page, like the two files on a release.
+      - name: Keep the installer as a workflow artifact
+        uses: actions/upload-artifact@v7
         with:
-          name: stereopticon-windows
-          path: |
-            dist/*.exe
-            dist/*.zip
+          name: Stereopticon-Setup
+          path: dist/*Setup*.exe
+          if-no-files-found: error
+      - name: Keep the portable zip as a workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Stereopticon-portable
+          path: dist/*-portable.zip
           if-no-files-found: error

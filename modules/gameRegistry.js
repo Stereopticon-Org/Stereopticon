@@ -29,7 +29,7 @@ function getSteamCommonPaths() {
         const { execSync } = require('child_process');
         const out = execSync(
             'reg query "HKCU\\SOFTWARE\\Valve\\Steam" /v SteamPath',
-            { encoding: 'utf8', timeout: 3000, stdio: ['pipe','pipe','pipe'] }
+            { windowsHide: true, encoding: 'utf8', timeout: 3000, stdio: ['pipe','pipe','pipe'] }
         );
         const m = out.match(/SteamPath\s+REG_SZ\s+(.+)/i);
         if (m) steamRoots.add(m[1].trim().replace(/\//g, '\\'));
@@ -170,7 +170,7 @@ function findGOGGame(title, exeName) {
             try {
                 const out = execSync(
                     `reg query "${regPath}" /s /v path`,
-                    { encoding: 'utf8', timeout: 5000, stdio: ['pipe','pipe','pipe'] }
+                    { windowsHide: true, encoding: 'utf8', timeout: 5000, stdio: ['pipe','pipe','pipe'] }
                 );
                 
                 for (const m of out.matchAll(/path\s+REG_SZ\s+(.+)/gi)) {

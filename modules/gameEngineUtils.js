@@ -234,6 +234,7 @@ function isProcessRunning(exeBaseName) {
     try {
         const name = exeBaseName.replace(/\.exe$/i, '');
         const out  = execFileSync('tasklist', ['/FI', `IMAGENAME eq ${exeBaseName}`, '/NH'], {
+            windowsHide: true,
             encoding: 'utf8',
             timeout:  2000,
             stdio:    ['ignore', 'pipe', 'ignore'],

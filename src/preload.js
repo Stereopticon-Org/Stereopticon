@@ -52,8 +52,8 @@ getDisplaySoftwareStatus:  (familyId, deviceId)        =>
     displayWriteSetting: (profileId, settingId, value)    => ipcRenderer.invoke('display:writeSetting', { profileId, settingId, value }),
 
     // Installer
-    installFix: (profile, gameId, gamePath, exeName) =>
-        ipcRenderer.invoke('install:fix', { profile, gameId, gamePath, exeName }),
+    installFix: (profile, gameId, gamePath, exeName, defaultWiz3dPath) =>
+        ipcRenderer.invoke('install:fix', { profile, gameId, gamePath, exeName, defaultWiz3dPath: defaultWiz3dPath || null }),
     installUEVRProfile: (profile) =>
         ipcRenderer.invoke('install:uevrProfile', { profile }),
     onInstallProgress: (callback) => {
@@ -155,6 +155,32 @@ getDisplaySoftwareStatus:  (familyId, deviceId)        =>
     addGameFromExe: ()       => ipcRenderer.invoke('games:addFromExe'),
     chooseGameExe:  (gameId) => ipcRenderer.invoke('games:chooseExe', { gameId }),
     removeUserGame: (gameId) => ipcRenderer.invoke('games:removeUser', { gameId }),
+
+    // stereopticon.org data
+    siteGames: (opts) => ipcRenderer.invoke('site:games', opts || {}),
+    siteNews:  (opts) => ipcRenderer.invoke('site:news', opts || {}),
+
+    // Stereo Loom
+    loomStatus: () => ipcRenderer.invoke('loom:status'),
+    loomOpen:   () => ipcRenderer.invoke('loom:open'),
+    onLoomProgress: (callback) => {
+        const handler = (_e, pct) => callback(pct);
+        ipcRenderer.on('loom:progress', handler);
+        return () => ipcRenderer.removeListener('loom:progress', handler);
+    },
+
+    // Stereopticon updates
+    appUpdateCheck:   () => ipcRenderer.invoke('appUpdate:check'),
+    appUpdateInstall: () => ipcRenderer.invoke('appUpdate:install'),
+    onAppUpdateProgress: (callback) => {
+        const handler = (_e, pct) => callback(pct);
+        ipcRenderer.on('appUpdate:progress', handler);
+        return () => ipcRenderer.removeListener('appUpdate:progress', handler);
+    },
+
+    // Game details: name, artwork, API, catalogue match
+    setGameDetails: (gameId, details) => ipcRenderer.invoke('gameDetails:set', { gameId, details }),
+    steamSearch:    (term) => ipcRenderer.invoke('steam:search', { term }),
 
     // Logs and reports
     writeLog:     (level, args) => ipcRenderer.send('log:write', { level, args }),

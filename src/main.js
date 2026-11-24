@@ -10,6 +10,20 @@ const appSettings = require('../modules/appSettings');
 const gamePrefs   = require('../modules/gamePrefs');
 const userGames   = require('../modules/userGames');
 const reporter    = require('../modules/reporter');
+const siteData    = require('../modules/siteData');
+const stereoLoom  = require('../modules/stereoLoom');
+const appUpdater  = require('../modules/appUpdater');
+
+// Name, artwork, API and catalogue match the user set on a game's details
+// dialog (gamePrefs[gameId].details), applied over the catalogue's own.
+function applyDetailsToRow(row, d) {
+    if (!d) return row;
+    const out = { ...row };
+    if (d.title) out.title = d.title;
+    if (d.steam_app_id) out.steam_app_id = String(d.steam_app_id);
+    if (d.api) out.graphics_apis = [d.api === 'dx10-11' ? 'dx11' : d.api];
+    return out;
+}
 const { execSync } = require('child_process');
 const DATA_DIR     = path.join(__dirname, '..', 'data');
 const BUNDLE_PATH  = path.join(DATA_DIR, '_bundle.json');
@@ -80,11 +94,27 @@ function loadSidebar() {
         userGames.discoverSteamGames(getSteamCommonPaths(), known);
         extra = userGames.sidebarRows();
     } catch (e) { console.warn('[userGames] Steam discovery failed:', e.message); }
-    return { ...sb, games: [...sb.games, ...extra] };
+    const prefs = gamePrefs.readAll();
+    const rows = [...sb.games, ...extra].map(r => prefs[r.id]?.details ? applyDetailsToRow(r, prefs[r.id].details) : r);
+    return { ...sb, games: rows };
 }
 function loadOneGame(id) {
     _readBundle();
-    return _gameById?.get(id) || (/^(steam|user)_/.test(String(id)) ? userGames.getOne(id) : null);
+    const base = _gameById?.get(id) || (/^(steam|user)_/.test(String(id)) ? userGames.getOne(id) : null);
+    const d = base && gamePrefs.get(id).details;
+    if (!d) return base;
+    const game = { ...base };
+    if (d.title) game.title = d.title;
+    if (d.steam_app_id) game.steam_app_id = String(d.steam_app_id);
+    if (d.api) game.graphics_api = d.api;
+    // A game added by hand can borrow the profile of the catalogue game it is.
+    const match = d.match_id && _gameById?.get(d.match_id);
+    if (match && !(game.fixes || []).length) {
+        game.fixes = match.fixes || [];
+        game.matched_title = match.title;
+        if (!d.api && match.graphics_api) game.graphics_api = match.graphics_api;
+    }
+    return game;
 }
 const { installFix, installUEVRProfile, installUE3D, readUEVRConfig, writeUEVRConfig, readVRto3DConfig, writeVRto3DConfig, installVRto3D, isVRto3DInstalled, getVRto3DConfigDir, writeVRto3DGameProfile, getCacheInfo, clearCache } = require('../modules/installer');
 const installManifest = require('../modules/installManifest');
@@ -97,6 +127,12 @@ const { spawn } = require('child_process');
 const { getDisplaySettings, writeDisplaySetting } = require('../modules/displaySettings');
 const profileManager = require('../modules/profileManager');
 const DISPLAYS_DIR   = path.join(__dirname, '..', 'data', 'displays');
+
+// Progress messages can arrive after the window has closed (a download still
+// running at quit); sending to a destroyed window throws.
+function safeSend(sender, channel, data) {
+    try { if (sender && !sender.isDestroyed()) sender.send(channel, data); } catch { /* window gone */ }
+}
 
 function createWindow() {
     const win = new BrowserWindow({
@@ -178,7 +214,7 @@ ipcMain.handle('displays:loadOne', (_, { displayId }) => {
 });
 
 // ── Install fix ───────────────────────────────────────────────
-ipcMain.handle('install:fix', async (event, { profile, gameId, gamePath, exeName }) => {
+ipcMain.handle('install:fix', async (event, { profile, gameId, gamePath, exeName, defaultWiz3dPath }) => {
     // Record what the install changes in the game folder so uninstall can undo
     // exactly that. A failed install is rolled back.
     const session = (gamePath && fs.existsSync(gamePath)) ? installManifest.begin(profile.id, gamePath) : null;
@@ -188,10 +224,11 @@ ipcMain.handle('install:fix', async (event, { profile, gameId, gamePath, exeName
         logger.info('install', `Installing ${profile.id} (${profile.type}) for ${gameId} into ${gamePath}`,
                     prefs.wiz3dVersion || prefs.wiz3dPath ? JSON.stringify(prefs) : '');
         const result = await installFix(profile, gamePath, (progress) => {
-            event.sender.send('install:progress', progress);
+            safeSend(event.sender, 'install:progress', progress);
         }, exeName || game?.exe_name || null, {
             beforeWrite: session?.beforeWrite, game,
-            wiz3d: { version: prefs.wiz3dVersion || null, path: prefs.wiz3dPath || null },
+            // The page's choice, else the path stereopticon.org reports working.
+            wiz3d: { version: prefs.wiz3dVersion || null, path: prefs.wiz3dPath || defaultWiz3dPath || null },
         });
         logger[result.success ? 'info' : 'warn']('install', result.success ? 'Installed' : 'Install failed', result.message || '');
         if (session) installManifest.finish(session, { rollback: !result.success });
@@ -304,7 +341,7 @@ ipcMain.handle('installState:setExtra', (_, { fixId, extra }) => {
 ipcMain.handle('install:ue3d', async (event, { profile, gamePath, exeName }) => {
     try {
         const result = await installUE3D(profile, gamePath, exeName, (progress) => {
-            event.sender.send('install:progress', progress);
+            safeSend(event.sender, 'install:progress', progress);
         });
         return { success: true, ...result };
     } catch (e) {
@@ -374,7 +411,7 @@ ipcMain.handle('vrto3d:install', async (event, { force = false } = {}) => {
     try {
         const { installVRto3D } = require('../modules/installer');
         const result = await installVRto3D((progress) => {
-            event.sender.send('vrto3d:installProgress', progress);
+            safeSend(event.sender, 'vrto3d:installProgress', progress);
         });
         return { success: true, ...result };
     } catch (e) {
@@ -525,7 +562,7 @@ ipcMain.handle('launch:sendKeys', async (_, { keys, delayMs = 2000 }) => {
     const ps = `Add-Type -Assembly 'System.Windows.Forms'; [System.Windows.Forms.SendKeys]::SendWait('${keys.replace(/'/g, "''")}')`;
     try {
         const { execSync } = require('child_process');
-        execSync(`powershell -NoProfile -NonInteractive -Command "${ps}"`, { timeout: 5000 });
+        execSync(`powershell -NoProfile -NonInteractive -Command "${ps}"`, { windowsHide: true, timeout: 5000 });
         return { success: true };
     } catch (e) {
         return { success: false, message: e.message };
@@ -542,7 +579,7 @@ ipcMain.handle('install:installedGameIds', ()            => [...getInstalledGame
 ipcMain.handle('install:uevrProfile', async (event, { profile }) => {
     try {
         const result = await installUEVRProfile(profile, (progress) => {
-            event.sender.send('install:progress', progress);
+            safeSend(event.sender, 'install:progress', progress);
         });
         return { success: true, ...result };
     } catch (e) {
@@ -655,11 +692,11 @@ ipcMain.handle('game:launchWithUEVR', async (event, { exePath }) => {
         stabilizeMs: 4_000,    // wait 4s after detection for game to finish loading
         onStatus: (msg) => {
             // Send progress updates to renderer during injection wait
-            try { event.sender.send('uevr:injectStatus', { message: msg }); } catch {}
+            try { safeSend(event.sender, 'uevr:injectStatus', { message: msg }); } catch {}
         },
     }).then(result => {
         try {
-            event.sender.send('uevr:injectStatus', {
+            safeSend(event.sender, 'uevr:injectStatus', {
                 message:  result.message,
                 success:  result.success,
                 done:     true,
@@ -733,7 +770,7 @@ ipcMain.handle('reshade:install', async (event, { gamePath, exePath, profile, re
             gamePath, exePath, profile,
             requiredShaders: requiredShaders || [],
             geo11Installed:  geo11Installed  || false,
-            onProgress: data => event.sender.send('reshade:progress', data),
+            onProgress: data => safeSend(event.sender, 'reshade:progress', data),
         });
         if (session) installManifest.finish(session, { rollback: !result.success });
         return result;
@@ -800,7 +837,7 @@ ipcMain.handle('wiz3d:status', async (_, { checkOnline = true } = {}) => {
 });
 ipcMain.handle('wiz3d:update', async (event) => {
     try {
-        const r = await wiz3dManager.installRelease(null, p => event.sender.send('wiz3d:progress', p));
+        const r = await wiz3dManager.installRelease(null, p => safeSend(event.sender, 'wiz3d:progress', p));
         logger.info('wiz3d', `Switched to wiz3D ${r.tag}`);
         return { success: true, tag: r.tag, name: r.name };
     } catch (e) {
@@ -878,12 +915,81 @@ ipcMain.handle('report:create', async (_, ctx) => {
         return { success: false, message: e.message };
     }
 });
+// ── stereopticon.org data (statuses, news) ──────────────────────
+ipcMain.handle('site:games', async (_, opts) => {
+    try { const r = await siteData.games(opts); return { success: true, ...r }; }
+    catch (e) { return { success: false, message: e.message }; }
+});
+ipcMain.handle('site:news', async (_, opts) => {
+    try { const r = await siteData.news(opts); return { success: true, ...r }; }
+    catch (e) { return { success: false, message: e.message }; }
+});
+
+// ── Stereo Loom ─────────────────────────────────────────────────
+ipcMain.handle('loom:status', () => ({ installed: stereoLoom.installed() }));
+ipcMain.handle('loom:open', async (event) => {
+    try {
+        const r = await stereoLoom.open(pct => safeSend(event.sender, 'loom:progress', pct));
+        logger.info('loom', `Started Stereo Loom ${r.tag}`);
+        return { success: true, tag: r.tag };
+    } catch (e) {
+        logger.warn('loom', 'Could not start Stereo Loom:', e.message);
+        return { success: false, message: e.message };
+    }
+});
+
+// ── Stereopticon updates ────────────────────────────────────────
+ipcMain.handle('appUpdate:check', async () => {
+    try { return { success: true, ...(await appUpdater.check()) }; }
+    catch (e) { return { success: false, message: e.message }; }
+});
+ipcMain.handle('appUpdate:install', async (event) => {
+    try {
+        const r = await appUpdater.downloadAndInstall(pct => safeSend(event.sender, 'appUpdate:progress', pct));
+        logger.info('update', `Installing Stereopticon ${r.version}`);
+        return { success: true, ...r };
+    } catch (e) {
+        logger.warn('update', 'Update failed:', e.message);
+        return { success: false, message: e.message };
+    }
+});
+
+// ── Game details (name, artwork, API, catalogue match) ──────────
+ipcMain.handle('gameDetails:set', (_, { gameId, details }) => {
+    const clean = {};
+    for (const k of ['title', 'steam_app_id', 'api', 'match_id']) {
+        const v = details?.[k];
+        if (v !== undefined && v !== null && String(v).trim() !== '') clean[k] = String(v).trim();
+    }
+    logger.info('games', `Details for ${gameId}:`, JSON.stringify(clean));
+    gamePrefs.set(gameId, { details: Object.keys(clean).length ? clean : null });
+    return { game: loadOneGame(gameId), row: applyDetailsToRow(
+        loadSidebar().games.find(r => r.id === gameId) || {}, clean) };
+});
+ipcMain.handle('steam:search', async (_, { term }) => {
+    return new Promise(resolve => {
+        const https = require('https');
+        const url = `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(term || '')}&l=english&cc=GB`;
+        https.get(url, { headers: { 'User-Agent': 'Stereopticon' } }, res => {
+            let body = ''; res.setEncoding('utf8');
+            res.on('data', c => { body += c; });
+            res.on('end', () => {
+                try {
+                    const items = (JSON.parse(body).items || []).filter(i => i.type === 'app')
+                        .map(i => ({ id: String(i.id), name: i.name, image: i.tiny_image }));
+                    resolve({ success: true, items });
+                } catch (e) { resolve({ success: false, message: e.message, items: [] }); }
+            });
+        }).on('error', e => resolve({ success: false, message: e.message, items: [] }));
+    });
+});
+
 ipcMain.handle('shell:showItem', (_, p) => { if (p && fs.existsSync(p)) shell.showItemInFolder(p); return true; });
 
 ipcMain.handle('app:version', () => {
     try {
         const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-        return { version: pkg.version, name: pkg.name, productName: pkg.productName };
+        return { version: pkg.version, name: pkg.name, productName: pkg.productName, isPackaged: app.isPackaged };
     } catch { return { version: '', name: 'stereopticon' }; }
 });
 
@@ -903,6 +1009,8 @@ ipcMain.handle('opentrack:open', () => {
     return { success: false, message: 'OpenTrack not found — run setup or install OpenTrack manually.' };
 });
 
+// One taskbar button for the app, with its own icon, rather than Electron's.
+if (process.platform === 'win32') app.setAppUserModelId('io.github.effcol.stereopticon');
 app.whenReady().then(createWindow);
 
 ipcMain.handle('game:scan', async (_, { title, exeName, steamAppId }) => {
@@ -939,7 +1047,7 @@ function findExe(softwareId) {
     const def = EXTERNAL_SOFTWARE[softwareId]; if (!def) return null;
     for (const key of (def.regKeys || [])) {
         try {
-            const out = execSync(`reg query "${key}" /v InstallDir`, { encoding: 'utf8', timeout: 2000 });
+            const out = execSync(`reg query "${key}" /v InstallDir`, { windowsHide: true, encoding: 'utf8', timeout: 2000 });
             const m = out.match(/InstallDir\s+REG_SZ\s+(.+)/i);
             if (m) { const c = path.join(m[1].trim(), def.exeFile); if (fs.existsSync(c)) return c; }
         } catch {}
@@ -1302,7 +1410,7 @@ function checkSoftwareInstalled(softwareId) {
             return require('fs').readdirSync(addonDir).some(f => f.startsWith('srReshade'));
         },
         'vertoxr': () => {
-            try { execSync('where vertoxr', { stdio: 'pipe' }); return true; } catch { return false; }
+            try { execSync('where vertoxr', { windowsHide: true, stdio: 'pipe' }); return true; } catch { return false; }
         },
     };
     return checks[softwareId] ? checks[softwareId]() : null;

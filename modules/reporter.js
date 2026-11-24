@@ -21,15 +21,58 @@ const logger = require('./logger');
 
 const REPORT_DIR = path.join(BASE, 'reports');
 
-// Game results go to wiz3D's tracker; problems with the app to Stereopticon's.
-const REPOS = { game: 'Stereopticon-Org/wiz3D', app: 'Stereopticon-Org/Stereopticon' };
+// Game results go to stereopticon.org's "Game test report" form (approved
+// reports update the site's compatibility list); problems with the app go to
+// Stereopticon's issue tracker.
+const REPOS = { game: 'Stereopticon-Org/stereopticon.org', app: 'Stereopticon-Org/Stereopticon' };
 
 const OUTCOMES = {
     working:   'Working',
-    partial:   'Partly working',
-    broken:    'Runs, but no 3D or broken 3D',
-    no_start:  'Game does not start or crashes',
+    mostly:    'Mostly working',
+    partial:   'Partial',
+    broken:    'Not working (no 3D or broken 3D)',
+    no_start:  'Not working (game does not start or crashes)',
 };
+// The website form's "Result" options.
+const SITE_RESULT = { working: 'Working', mostly: 'Mostly working', partial: 'Partial', broken: 'Not working', no_start: 'Not working' };
+// Stereopticon output ids → the form's "Output mode" options.
+const SITE_OUTPUT = {
+    sr_weave: 'SRWeave', sbs: 'HalfSBS', sbs_half: 'HalfSBS', sbs_full: 'FullSBS',
+    tab: 'HalfTAB', tab_half: 'HalfTAB', tab_full: 'FullTAB', anaglyph: 'Anaglyph', anaglyph_red_cyan: 'Anaglyph',
+    interleaved: 'RowIL', interleaved_row: 'RowIL', interlaced: 'RowIL', interleaved_col: 'ColumnIL',
+    interleaved_column: 'ColumnIL', interleaved_checkerboard: 'Checker',
+};
+// Installed wiz3D folder → the form's "API" option.
+function siteApi(variant) {
+    const v = String(variant || '');
+    if (/^HD3D/i.test(v)) return 'HD3D';
+    if (/OpenGL/i.test(v)) return 'OpenGL';
+    if (/DX10-11|DX10|DX11/i.test(v)) return 'DX10/11';
+    const m = /DX(7|8|9)/i.exec(v);
+    return m ? `DX${m[1]}` : 'Not sure';
+}
+
+/** Link to the website's report form with every field we know filled in. */
+function siteReportUrl(ctx, rec, sys, zipName) {
+    const notes = [(ctx.notes || '').trim(),
+        ctx.outcome === 'no_start' ? 'The game does not start or crashes.' : '',
+        `Reported from Stereopticon ${sys.stereopticon}. Logs: ${zipName} (drag it into this box to attach it).`,
+    ].filter(Boolean).join('\n\n');
+    const fields = {
+        template: 'compat-report.yml',
+        title:    `[Compat] ${ctx.game?.title || ''}`,
+        game:     ctx.site_name || ctx.game?.title || '',
+        version:  String(rec.wiz3dVersion || '').replace(/^v/, ''),
+        folder:   rec.wiz3dVariant || '',
+        api:      siteApi(rec.wiz3dVariant),
+        output:   SITE_OUTPUT[ctx.output] || '',
+        display:  [ctx.display, sys.gpu].filter(Boolean).join(', '),
+        result:   SITE_RESULT[ctx.outcome] || '',
+        notes,
+    };
+    const q = Object.entries(fields).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+    return `https://github.com/${REPOS.game}/issues/new?${q}`;
+}
 
 const MAX_LOG_BYTES  = 4 * 1024 * 1024;    // per file; the tail is kept
 const GAME_LOG_DAYS  = 7;
@@ -157,10 +200,10 @@ async function createReport(ctx) {
 
     let urlBody = body;
     if (urlBody.length > URL_BODY_LIMIT) urlBody = urlBody.slice(0, URL_BODY_LIMIT) + '\n\n_(cut short; the full report is in the zip)_';
-    const repo = REPOS[kind];
-    const labels = kind === 'game' ? 'game report' : 'bug';
-    const issueUrl = `https://github.com/${repo}/issues/new?title=${encodeURIComponent(title)}` +
-                     `&body=${encodeURIComponent(urlBody)}&labels=${encodeURIComponent(labels)}`;
+    const issueUrl = kind === 'game'
+        ? siteReportUrl(ctx, rec, sys, path.basename(zipPath))
+        : `https://github.com/${REPOS.app}/issues/new?title=${encodeURIComponent(title)}` +
+          `&body=${encodeURIComponent(urlBody)}&labels=bug`;
 
     logger.info('report', `Report created: ${zipPath}`);
     return { zipPath, folder, issueUrl, title, included };

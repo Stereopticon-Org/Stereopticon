@@ -120,6 +120,12 @@ test('a report zip holds the report and the game logs', async () => {
     assert.ok(names.includes('game/wiz3D_proxy.log'));
     assert.ok(names.includes('game/wiz3D_Config.xml'));
     assert.ok(!names.includes('game/savegame.txt'));
-    assert.match(r.issueUrl, /^https:\/\/github\.com\/Stereopticon-Org\/wiz3D\/issues\/new\?title=/);
-    assert.match(decodeURIComponent(r.issueUrl), /Partly working/);
+    // The website's report form, with its fields filled in.
+    assert.match(r.issueUrl, /^https:\/\/github\.com\/Stereopticon-Org\/stereopticon\.org\/issues\/new\?template=compat-report\.yml&/);
+    const q = new URL(r.issueUrl).searchParams;
+    assert.strictEqual(q.get('result'), 'Partial');
+    assert.strictEqual(q.get('version'), '0.4.2');
+    assert.strictEqual(q.get('folder'), 'HD3D/32-bit');
+    assert.strictEqual(q.get('api'), 'HD3D');
+    assert.match(q.get('notes'), /HUD at screen depth/);
 });

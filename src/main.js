@@ -887,7 +887,9 @@ ipcMain.handle('wiz3d:paths', () => Object.entries(gamePrefs.WIZ3D_PATHS).map(([
 // ── Settings that the main process needs ────────────────────────
 ipcMain.handle('settings:get', () => {
     const s = appSettings.readAll();
-    return { ...s, steamGridDbKey: s.steamGridDbKey ? '••••' + String(s.steamGridDbKey).slice(-4) : '' };
+    const sgdb = require('../modules/steamGridDb');
+    return { ...s, steamGridDbKey: s.steamGridDbKey ? '••••' + String(s.steamGridDbKey).slice(-4) : '',
+             steamGridDbAvailable: sgdb.isAvailable(), steamGridDbBuiltin: sgdb.hasBuiltinKey() };
 });
 ipcMain.handle('settings:set', (_, values) => {
     const next = appSettings.set(values || {});

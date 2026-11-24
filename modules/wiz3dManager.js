@@ -120,10 +120,39 @@ async function listReleases({ fresh = false } = {}) {
     const raw = await fetchJson(`https://api.github.com/repos/${REPO}/releases?per_page=50`);
     const list = (Array.isArray(raw) ? raw : [])
         .filter(r => !r.draft)
-        .map(toRelease).filter(r => r && isSupported(r.tag))
-        .sort((x, y) => String(y.publishedAt).localeCompare(String(x.publishedAt)));
+        .map(toRelease).filter(r => r && isSupported(r.tag));
+    // The newest automatic build of main counts as a beta release.
+    const build = await latestActionsBuild().catch(() => null);
+    if (build && isSupported(build.tag) && !list.some(r => r.tag === build.tag)) list.push(build);
+    list.sort((x, y) => String(y.publishedAt).localeCompare(String(x.publishedAt)));
     _listCache = { at: Date.now(), list };
     return list;
+}
+
+/**
+ * The newest successful GitHub Actions build of wiz3D's main branch, as a
+ * pre-release. Actions downloads normally need a GitHub sign-in, so the
+ * file comes through nightly.link, a public service that serves the
+ * artifacts of public repositories.
+ */
+async function latestActionsBuild() {
+    const runs = await fetchJson(`https://api.github.com/repos/${REPO}/actions/workflows/release.yml/runs?branch=main&status=success&per_page=1`);
+    const run = runs?.workflow_runs?.[0];
+    if (!run) return null;
+    const arts = await fetchJson(`https://api.github.com/repos/${REPO}/actions/runs/${run.id}/artifacts`);
+    const art = (arts?.artifacts || []).find(a => !a.expired && /^wiz3D.v/i.test(a.name));
+    if (!art) return null;
+    const version = art.name.replace(/^wiz3D.v/i, '');
+    return {
+        tag:         `v${version}-build.${run.run_number}`,
+        name:        `wiz3D ${version} build ${run.run_number} (${String(run.head_sha).slice(0, 7)})`,
+        prerelease:  true,
+        actionsBuild: true,
+        publishedAt: run.updated_at || run.created_at,
+        assetName:   `${art.name}.zip`,
+        assetUrl:    `https://nightly.link/${REPO}/actions/runs/${run.id}/${encodeURIComponent(art.name)}.zip`,
+        size:        0,   // the artifact size is of the unzipped files, not the download
+    };
 }
 
 function channel() {
@@ -214,7 +243,10 @@ async function installRelease(release = null, onProgress = () => {}, { makeCurre
                 onProgress({ ...p, message: `Downloading wiz3D ${rel.tag}… ${p.percent}%` }));
             onProgress({ stage: 'extract', percent: 100, message: `Extracting wiz3D ${rel.tag}…` });
             extractRelease(zipPath, partial);
-            fs.renameSync(partial, finalDir);
+            // Actions builds may keep an extra folder level; find the real root.
+            const root = findReleaseRoot(partial) || partial;
+            if (root === partial) fs.renameSync(partial, finalDir);
+            else { fs.renameSync(root, finalDir); fs.rmSync(partial, { recursive: true, force: true }); }
         } finally {
             fs.rmSync(zipPath, { force: true });
             fs.rmSync(partial, { recursive: true, force: true });

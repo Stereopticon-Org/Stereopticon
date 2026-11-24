@@ -65,7 +65,11 @@ function fetchReleases() {
 async function check() {
     const channel = appSettings.get('appChannel') === 'beta' ? 'beta' : 'stable';
     const current = electronApp?.getVersion?.() || require('../package.json').version;
-    const releases = (await fetchReleases()).filter(r => !r.draft && (channel === 'beta' || !r.prerelease));
+    const published = (await fetchReleases()).filter(r => !r.draft);
+    // Until the first full release (1.0) there are only nightly builds, so
+    // those are offered whichever channel is chosen.
+    const stable = published.filter(r => !r.prerelease);
+    const releases = channel === 'beta' || !stable.length ? published : stable;
     const rel = releases[0];
     const setup = rel && (rel.assets || []).find(a => /Setup.*\.exe$/i.test(a.name));
     const latest = rel ? { version: rel.tag_name.replace(/^v/, ''), name: rel.name || rel.tag_name,

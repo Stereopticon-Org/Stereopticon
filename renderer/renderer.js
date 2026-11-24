@@ -1153,7 +1153,7 @@ window.openDetailsModal = async function(justAdded = false) {
     ['sgdbGames', 'sgdbPosters', 'sgdbHeroes'].forEach(id => { document.getElementById(id).innerHTML = ''; });
     ['sgdbPostersWrap', 'sgdbHeroesWrap'].forEach(id => { document.getElementById(id).style.display = 'none'; });
     updateSgdbChosen();
-    const hasKey = !!(await window.api.getSettings()).steamGridDbKey;
+    const hasKey = !!(await window.api.getSettings()).steamGridDbAvailable;
     document.getElementById('sgdbNoKey').style.display = hasKey ? 'none' : '';
     document.getElementById('sgdbBlock').style.display = hasKey ? '' : 'none';
     document.getElementById('detailsStatus').textContent = '';
@@ -3551,7 +3551,7 @@ function renderDetailView() {
                     <button class="hero-btn hero-btn-ghost" title="Game details: name, artwork, API" onclick="openDetailsModal()">⚙</button>
                     <button id="btnInstallFix" class="hero-btn hero-btn-secondary" onclick="handleInstallClick()">⇩ Install Fix</button>
                     <button id="btnLaunchGame" class="hero-btn hero-btn-primary" onclick="handleLaunchClick()">▶ Launch</button>
-                    <button id="btnUninstallMain" class="hero-btn hero-btn-ghost" title="Uninstall Fix" onclick="handleUninstallClick()" style="display:none;">🗑</button>
+                    <button id="btnUninstallMain" class="hero-btn hero-btn-ghost" title="Uninstall Fix" onclick="handleUninstallClick()" style="display:none;"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L12 4M6.8 6.8v4.4M9.2 6.8v4.4"/></svg></button>
                 </div>
             </div>
         </div>
@@ -4429,7 +4429,8 @@ window.openSettingsModal = async function() {
         if (auto)    auto.checked    = s.autoWiz3d !== false;
         if (appBeta) appBeta.checked = s.appChannel === 'beta';
         const ks = document.getElementById('sgdbKeyStatus');
-        if (ks) ks.textContent = s.steamGridDbKey ? `A key is saved (${s.steamGridDbKey}).` : 'No key saved.';
+        if (ks) ks.textContent = s.steamGridDbKey ? `Your key is saved (${s.steamGridDbKey}).`
+            : s.steamGridDbBuiltin ? "Using Stereopticon's shared key. Add your own only if it runs out." : 'No key saved.';
         // Library visibility and other experiments: running from source only.
         const info = await window.api.getAppVersion?.();
         const dev = document.getElementById('devOnlySettings');

@@ -18,7 +18,7 @@ Stereopticon is licensed under the **GNU LGPL v2.1 or later**, the same licence 
 
 ## Download
 
-Get the latest version from the [Releases page](https://github.com/Stereopticon-Org/Stereopticon/releases). Two files are offered:
+Until version 1.0, Stereopticon is published as **nightly builds**: every change is built automatically and published on the [Releases page](https://github.com/Stereopticon-Org/Stereopticon/releases) as a pre-release named like `v0.1.1-nightly.4`. Take the newest one. Once installed, Settings → About offers each newer nightly. Two files are offered:
 
 | File | Use it if |
 |---|---|
@@ -81,9 +81,11 @@ Or double-click `Stereopticon.cmd`, which installs dependencies on first run and
 | `npm run bundle` | Rebuild the catalogue index (`data/_bundle.json`, `data/_sidebar.json`) after editing `data/games/`. |
 | `npm run dist` | Build the installer and portable zip into `dist/`. |
 
-### Releasing
+### Nightly builds and releases
 
-Set `"version"` in `package.json`, commit, then push a matching tag:
+Every push to `main` runs the [Nightly workflow](.github/workflows/nightly.yml): tests, a build, and a pre-release named `v<next patch>-nightly.<run>` (the newest three are kept).
+
+Full releases start at 1.0. To make one, set `"version"` in `package.json`, commit, then push a matching tag:
 
 ```
 git tag v0.1.0

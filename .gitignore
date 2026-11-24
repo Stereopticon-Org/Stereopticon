@@ -86,3 +86,6 @@ desktop.ini
 *.tmp
 *.bak
 *~
+
+# Written at build time from GitHub secrets; never committed.
+modules/builtin-keys.json

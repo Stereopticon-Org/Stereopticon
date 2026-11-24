@@ -5,6 +5,9 @@
  * Artwork from SteamGridDB (www.steamgriddb.com), for the game details
  * dialog. The API needs a free personal key (SteamGridDB → Preferences →
  * API), entered in Settings → General → Artwork and kept in settings.json.
+ * Builds made by GitHub Actions can also carry Stereopticon's own key
+ * (the SGDB_API_KEY secret, written to modules/builtin-keys.json at build
+ * time and never committed); the user's key, when set, is used instead.
  *
  *   search(term)          games matching a name: [{ id, name, year }]
  *   artwork(gameId)       { posters, heroes } for a SteamGridDB game id
@@ -15,8 +18,16 @@ const appSettings = require('./appSettings');
 
 const API = 'https://www.steamgriddb.com/api/v2';
 
+function builtinKey() {
+    try { return String(require('./builtin-keys.json').steamGridDb || '').trim(); } catch { return ''; }
+}
+function apiKey() {
+    return String(appSettings.get('steamGridDbKey') || '').trim() || builtinKey();
+}
+function isAvailable() { return !!apiKey(); }
+
 function get(pathAndQuery) {
-    const key = String(appSettings.get('steamGridDbKey') || '').trim();
+    const key = apiKey();
     if (!key) return Promise.reject(new Error('Add your SteamGridDB API key in Settings → General → Artwork first.'));
     return new Promise((resolve, reject) => {
         const req = https.get(API + pathAndQuery, {
@@ -59,4 +70,4 @@ async function artwork(gameId) {
     return { posters: pick(posters), heroes: pick(heroes) };
 }
 
-module.exports = { search, artwork };
+module.exports = { search, artwork, isAvailable, hasBuiltinKey: () => !!builtinKey() };

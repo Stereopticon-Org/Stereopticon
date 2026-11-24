@@ -108,6 +108,10 @@ The [Release workflow](.github/workflows/release.yml) runs the tests, builds bot
 
 Stereopticon does not inject anything into games itself. It installs and configures the tools that do, which run under their own licences.
 
+## Support
+
+Stereopticon, wiz3D and Stereo Loom are free. If you'd like to help, donate through [Open Collective](https://opencollective.com/stereopticon), where every expense is public. Questions: hello@stereopticon.org.
+
 ## Licence
 
 Stereopticon is licensed under the **GNU Lesser General Public License v2.1 or later** (`LGPL-2.1-or-later`). See `LICENSE` for the full text and `Notice.md` for third-party attribution.

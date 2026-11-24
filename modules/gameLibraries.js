@@ -137,8 +137,18 @@ async function gogGames() {
             const dir = path.join(root, e.name);
             let title = e.name;
             const info = (await readdirSafe(dir)).find(f => /^goggame-\d+\.info$/i.test(f.name));
-            if (info) { try { title = JSON.parse(await fsp.readFile(path.join(dir, info.name), 'utf8')).name || title; } catch { /* keep folder name */ } }
-            out.push({ source: 'gog', title, dir });
+            let exe = null;
+            if (info) {
+                try {
+                    const j = JSON.parse(await fsp.readFile(path.join(dir, info.name), 'utf8'));
+                    title = j.name || title;
+                    // The primary play task is the exe GOG Galaxy starts.
+                    const tasks = j.playTasks || [];
+                    const task = tasks.find(t => t.isPrimary && t.path) || tasks.find(t => t.path && /\.exe$/i.test(t.path));
+                    if (task) exe = path.join(dir, task.path);
+                } catch { /* keep folder name */ }
+            }
+            out.push({ source: 'gog', title, dir, exe });
         }
     }
     return out;
@@ -181,7 +191,7 @@ function installedPrograms() {
         "'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'," +
         "'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' -ErrorAction SilentlyContinue | " +
         "Where-Object { $_.DisplayName -and $_.InstallLocation } | " +
-        "Select-Object DisplayName,InstallLocation,Publisher,SystemComponent | ConvertTo-Json -Compress";
+        "Select-Object DisplayName,InstallLocation,Publisher,SystemComponent,DisplayIcon | ConvertTo-Json -Compress";
     return new Promise(resolve => {
         execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps],
             { windowsHide: true, maxBuffer: 32 * 1024 * 1024, timeout: 30000, encoding: 'utf8' },
@@ -202,8 +212,11 @@ async function windowsPrograms() {
         // every entry still helps match catalogue games by name.
         const looksLikeGame = GAME_PUBLISHER.test(v.Publisher || '') ||
             /[\\/](games?|ea games|epic games|ubi connect|gog galaxy|xboxgames)[\\/]/i.test(dir);
+        // The program's icon is usually its exe ("C:\...\Game.exe,0").
+        const icon = String(v.DisplayIcon || '').replace(/,\s*-?\d+$/, '').replace(/^"+|"+$/g, '');
+        const exe = /\.exe$/i.test(icon) && !/unins|setup|install|launcher/i.test(path.basename(icon)) ? icon : null;
         out.push({ source: 'windows', title: String(v.DisplayName).replace(/\s*\(version [^)]*\)$/i, ''), dir,
-                   publisher: v.Publisher || '', listable: looksLikeGame });
+                   publisher: v.Publisher || '', listable: looksLikeGame, exe });
     }
     return out;
 }
@@ -267,7 +280,8 @@ async function scan(targets, { folderMatches }) {
         }
     }
 
-    const paths = {};
+    // Per catalogue game: its folder, the exe its launcher reports, its Steam id.
+    const paths = {}, exes = {}, steamIds = {};
     const used = new Set();
     let n = 0;
     for (const t of targets) {
@@ -283,7 +297,11 @@ async function scan(targets, { folderMatches }) {
                 if (folderMatches(t.title, e.title, true) && await exeUnder(e.dir, t.exeName, 2)) { hit = e; break; }
             }
         }
-        if (hit) { paths[t.id] = hit.dir; used.add(hit); }
+        if (hit) {
+            paths[t.id] = hit.dir; used.add(hit);
+            if (hit.exe) exes[t.id] = hit.exe;
+            if (hit.steam_app_id) steamIds[t.id] = String(hit.steam_app_id);
+        }
     }
 
     const catalogueSteam = new Set(targets.map(t => String(t.steamAppId || '')).filter(Boolean));
@@ -293,7 +311,7 @@ async function scan(targets, { folderMatches }) {
     // Games found per launcher (catalogue matches and others), for Settings.
     const sources = {};
     for (const e of [...used, ...extras]) sources[e.source] = (sources[e.source] || 0) + 1;
-    const result = { at: Date.now(), paths, extras, steamLibraries: libs, sources };
+    const result = { at: Date.now(), paths, exes, steamIds, extras, steamLibraries: libs, sources };
     try {
         await fsp.mkdir(path.dirname(CACHE_FILE), { recursive: true });
         await fsp.writeFile(CACHE_FILE, JSON.stringify(result));

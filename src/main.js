@@ -1034,15 +1034,31 @@ ipcMain.handle('games:steamLibraries', () => { try { return getSteamLibraries();
 // stereopticon.org gives (its game files' optional "exe" field), the
 // catalogue's exe name found under the game folder, or a best guess.
 const wiz3dDetect = require('../modules/wiz3dDetect');
-ipcMain.handle('game:inspect', (_, { gameId, gamePath, exeName, siteExe }) => {
+ipcMain.handle('game:inspect', async (_, { gameId, gamePath, exeName, siteExe, steamAppId }) => {
     const { findGameExe } = require('../modules/installer');
+    const steamLaunch = require('../modules/steamLaunch');
     const prefs = gamePrefs.get(gameId);
+    const inFolder = p => !!p && !!gamePath && path.resolve(p).toLowerCase().startsWith(path.resolve(gamePath).toLowerCase());
     let exePath = null, source = null;
     if (prefs.exePath && fs.existsSync(prefs.exePath)) { exePath = prefs.exePath; source = 'chosen'; }
     // stereopticon.org can say where the exe is, relative to the game folder ("Binaries/Win32/TheBall.exe").
     if (!exePath && siteExe && gamePath) {
         const p = path.join(gamePath, siteExe);
         if (fs.existsSync(p)) { exePath = p; source = 'website'; }
+    }
+    // The exe the game's launcher starts: Epic, GOG and the installed-programs
+    // list from the last scan, or Steam's launch settings (looked up once).
+    if (!exePath && gamePath) {
+        const scan = gameLibraries.cached();
+        const row = userGames.list().find(g => g.id === gameId);
+        const reported = scan?.exes?.[gameId] || row?.exe_path;
+        const best = reported && inFolder(reported) ? steamLaunch.bestGameExe([reported]) : null;
+        if (best) { exePath = best; source = 'launcher'; }
+        const appId = steamAppId || scan?.steamIds?.[gameId] || row?.steam_app_id;
+        if (!exePath && appId) {
+            const fromSteam = await steamLaunch.findExe(appId, gamePath);
+            if (fromSteam) { exePath = fromSteam; source = 'launcher'; }
+        }
     }
     if (!exePath && exeName && gamePath) { exePath = findGameExe(gamePath, exeName); if (exePath) source = 'catalogue'; }
     if (!exePath && gamePath && fs.existsSync(gamePath)) { exePath = userGames.guessExe(gamePath); if (exePath) source = 'guess'; }
@@ -1134,7 +1150,7 @@ ipcMain.handle('game:scanAll', async () => {
 });
 ipcMain.handle('game:lastScan', () => {
     const c = gameLibraries.cached();
-    return c ? { at: c.at, steamLibraries: c.steamLibraries, sources: c.sources } : null;
+    return c ? { at: c.at, paths: c.paths, steamLibraries: c.steamLibraries, sources: c.sources } : null;
 });
 
 const EXTERNAL_SOFTWARE = {

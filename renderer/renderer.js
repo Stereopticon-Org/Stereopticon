@@ -1105,7 +1105,7 @@ async function refreshGameInspect() {
     const gameId = selectedGame.id, gamePath = getInstallPath();
     const exeName = selectedGame.exe_name || selectedProfile?.exe_name || null;
     const siteExe = siteEntryFor(selectedGame)?.exe || null;
-    const info = await window.api.inspectGame(gameId, gamePath, exeName, siteExe);
+    const info = await window.api.inspectGame(gameId, gamePath, exeName, siteExe, selectedGame.steam_app_id || null);
     if (selectedGame?.id !== gameId) return null;
     selectedGame._inspect = info;
     renderGameFilesInfo();
@@ -1127,7 +1127,9 @@ function renderGameFilesInfo() {
     const lines = [];
     if (info.exePath) {
         const note = info.source === 'guess' ? ' <span style="color:var(--warn);">(a guess; check it)</span>'
-                   : info.source === 'chosen' ? ' (chosen by you)' : '';
+                   : info.source === 'chosen' ? ' (chosen by you)'
+                   : info.source === 'website' ? ' (from stereopticon.org)'
+                   : info.source === 'launcher' ? " (from the game's launcher)" : '';
         lines.push(`wiz3D goes next to <code>${esc(relToGame(info.exePath))}</code>${note} · <a href="#" class="about-link" onclick="chooseGameExe();return false;">Change</a>`);
     } else if (getInstallPath()) {
         lines.push(`<span style="color:var(--warn);">Stereopticon could not find this game's .exe.</span> <a href="#" class="about-link" onclick="chooseGameExe();return false;">Choose it</a> so wiz3D goes in the right folder.`);
@@ -1691,7 +1693,7 @@ async function handleInstallClick() {
     setProgress(0, 'Installing fix…', null);
     try {
         const known = isWiz3DType(selectedProfile.type) ? siteKnownWiz3DPath(selectedGame) : null;
-        const result = await window.api.installFix(selectedProfile, selectedGame.id, gamePath, selectedGame.exe_name,
+        const result = await window.api.installFix(selectedProfile, selectedGame.id, gamePath, selectedGame._inspect?.exePath || selectedGame.exe_name,
             known && known !== recommendedWiz3DPathKey(selectedProfile, selectedGame) ? known : null);
         setProgress(100, result.success ? 'Installation complete' : 'Install failed', null);
         showResult(result.success, result.message || (result.success ? 'Fix installed.' : 'Install failed.'));
@@ -2453,21 +2455,12 @@ async function init() {
         // from _scannedPaths, and scanning 445 games from disk takes seconds.
         // Cached values give an instant first-render; we re-scan in the
         // background and re-render if results change.
-        const SCAN_CACHE_KEY = 'stereopticon.scanCache.v1';
-        const SCAN_CACHE_TTL_MS = 24 * 60 * 60 * 1000;   // 24h
-        let cachedScan = null;
+        // Where games were found last time (the main process keeps the last
+        // scan on disk), so the library is right before the fresh scan ends.
         try {
-            const raw = localStorage.getItem(SCAN_CACHE_KEY);
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                if (parsed && parsed.ts && (Date.now() - parsed.ts) < SCAN_CACHE_TTL_MS) {
-                    cachedScan = parsed.paths || {};
-                }
-            }
-        } catch {}
-        if (cachedScan) {
-            window._scannedPaths = cachedScan;
-        }
+            const last = await window.api.gameLastScan();
+            if (last?.paths) window._scannedPaths = last.paths;
+        } catch { /* first run: the scan below fills it in */ }
 
         renderSidebar(gamesData);
         autoSelectDisplayFromDetection();

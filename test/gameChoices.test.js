@@ -160,3 +160,17 @@ test('a custom wiz3D build can be added from a folder and made the default', () 
     wiz3dManager.setCurrent(r.tag);
     assert.throws(() => wiz3dManager.removeCustom(r.tag), /default/);
 });
+
+test("Steam's launch entries: Windows exes first, launchers last", () => {
+    const { windowsExes } = require('../modules/steamLaunch');
+    const launch = {
+        0: { executable: 'PlayGTAV.exe', type: 'default' },
+        1: { executable: './Binaries/Win32/Game.exe' },
+        2: { executable: 'Game.app', config: { oslist: 'macos' } },
+        3: { executable: '2KLauncher/LauncherPatcher.exe' },
+    };
+    const exes = windowsExes(launch);
+    assert.deepStrictEqual(exes.slice(0, 2), ['PlayGTAV.exe', 'Binaries\Win32\Game.exe']);
+    assert.strictEqual(exes[exes.length - 1], '2KLauncher\LauncherPatcher.exe');
+    assert.ok(!exes.includes('Game.app'));
+});

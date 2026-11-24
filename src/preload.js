@@ -194,7 +194,7 @@ getDisplaySoftwareStatus:  (familyId, deviceId)        =>
     createReport: (ctx) => ipcRenderer.invoke('report:create', ctx),
     showItem:     (p)   => ipcRenderer.invoke('shell:showItem', p),
     pathExists:   (p)   => ipcRenderer.invoke('fs:exists', p),
-    inspectGame:  (gameId, gamePath, exeName, siteExe) => ipcRenderer.invoke('game:inspect', { gameId, gamePath, exeName, siteExe }),
+    inspectGame:  (gameId, gamePath, exeName, siteExe, steamAppId) => ipcRenderer.invoke('game:inspect', { gameId, gamePath, exeName, siteExe, steamAppId }),
     chooseExeFor: (gameId, gamePath) => ipcRenderer.invoke('game:chooseExeFor', { gameId, gamePath }),
     steamLibraries: ()  => ipcRenderer.invoke('games:steamLibraries'),
 });

@@ -3551,7 +3551,7 @@ function renderDetailView() {
                     <button class="hero-btn hero-btn-ghost" title="Game details: name, artwork, API" onclick="openDetailsModal()">⚙</button>
                     <button id="btnInstallFix" class="hero-btn hero-btn-secondary" onclick="handleInstallClick()">⇩ Install Fix</button>
                     <button id="btnLaunchGame" class="hero-btn hero-btn-primary" onclick="handleLaunchClick()">▶ Launch</button>
-                    <button id="btnUninstallMain" class="hero-btn hero-btn-ghost" title="Uninstall Fix" onclick="handleUninstallClick()" style="display:none;"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L12 4M6.8 6.8v4.4M9.2 6.8v4.4"/></svg></button>
+                    <button id="btnUninstallMain" class="hero-btn hero-btn-ghost" title="Uninstall Fix" onclick="handleUninstallClick()" style="display:none;">🗑</button>
                 </div>
             </div>
         </div>

@@ -170,7 +170,7 @@ test("Steam's launch entries: Windows exes first, launchers last", () => {
         3: { executable: '2KLauncher/LauncherPatcher.exe' },
     };
     const exes = windowsExes(launch);
-    assert.deepStrictEqual(exes.slice(0, 2), ['PlayGTAV.exe', 'Binaries\Win32\Game.exe']);
-    assert.strictEqual(exes[exes.length - 1], '2KLauncher\LauncherPatcher.exe');
+    assert.deepStrictEqual(exes.slice(0, 2), ['PlayGTAV.exe', 'Binaries\\Win32\\Game.exe']);
+    assert.strictEqual(exes[exes.length - 1], '2KLauncher\\LauncherPatcher.exe');
     assert.ok(!exes.includes('Game.app'));
 });

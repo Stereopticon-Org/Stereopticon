@@ -188,6 +188,7 @@ getDisplaySoftwareStatus:  (familyId, deviceId)        =>
     createReport: (ctx) => ipcRenderer.invoke('report:create', ctx),
     showItem:     (p)   => ipcRenderer.invoke('shell:showItem', p),
     pathExists:   (p)   => ipcRenderer.invoke('fs:exists', p),
+    steamLibraries: ()  => ipcRenderer.invoke('games:steamLibraries'),
 });
 
 // Uncaught errors in the window go to Stereopticon's log file. (Console

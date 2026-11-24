@@ -339,4 +339,30 @@ async function scanAllGames(targets) {
     return results;
 }
 
-module.exports = { scanGame, scanAllGames, folderMatches, getSteamCommonPaths };
+/**
+ * Every Steam library listed in libraryfolders.vdf, and whether it can be
+ * reached now (a library on an unplugged drive is listed but missing).
+ */
+function getSteamLibraries() {
+    const roots = new Set(['C:\\Program Files (x86)\\Steam', 'C:\\Program Files\\Steam']);
+    try {
+        const { execSync } = require('child_process');
+        const out = execSync('reg query "HKCU\\SOFTWARE\\Valve\\Steam" /v SteamPath',
+            { windowsHide: true, encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'] });
+        const m = out.match(/SteamPath\s+REG_SZ\s+(.+)/i);
+        if (m) roots.add(m[1].trim().replace(/\//g, '\\'));
+    } catch { /* Steam not installed */ }
+    const libs = new Map();
+    for (const root of roots) {
+        const vdf = path.join(root, 'steamapps', 'libraryfolders.vdf');
+        let text; try { text = fs.readFileSync(vdf, 'utf8'); } catch { continue; }
+        for (const m of text.matchAll(/"path"\s+"([^"]+)"/gi)) {
+            const lib = m[1].replace(/\\\\/g, '\\');
+            const key = lib.toLowerCase();
+            if (!libs.has(key)) libs.set(key, { path: lib, available: fs.existsSync(path.join(lib, 'steamapps')) });
+        }
+    }
+    return [...libs.values()];
+}
+
+module.exports = { scanGame, scanAllGames, folderMatches, getSteamCommonPaths, getSteamLibraries };

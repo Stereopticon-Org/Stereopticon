@@ -3,7 +3,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 const os   = require('os');
-const { scanGame, scanAllGames, getSteamCommonPaths } = require('../modules/gameRegistry');
+const { scanGame, scanAllGames, getSteamCommonPaths, getSteamLibraries } = require('../modules/gameRegistry');
 const logger      = require('../modules/logger');
 logger.install();
 const appSettings = require('../modules/appSettings');
@@ -984,6 +984,7 @@ ipcMain.handle('steam:search', async (_, { term }) => {
     });
 });
 
+ipcMain.handle('games:steamLibraries', () => { try { return getSteamLibraries(); } catch { return []; } });
 ipcMain.handle('fs:exists', (_, p) => !!p && fs.existsSync(p));
 ipcMain.handle('shell:showItem', (_, p) => { if (p && fs.existsSync(p)) shell.showItemInFolder(p); return true; });
 

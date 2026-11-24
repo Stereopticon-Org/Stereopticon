@@ -2326,6 +2326,7 @@ async function init() {
             loadSiteGames().catch(e => console.warn('[site]', e));
             autoDownloadWiz3D().catch(e => console.warn('[wiz3D auto]', e));
             checkAppUpdate(false).catch(() => {});
+            warnOfflineSteamLibraries().catch(() => {});
         }, 800);
         // Background game path scan. Wait a beat so the UI paints first.
         // If we hydrated from cache, this becomes a freshness check; if we
@@ -2772,11 +2773,13 @@ if (sortSelect) sortSelect.addEventListener('change', e => { sortMode = e.target
 const FILTER_GROUPS = [
     { title: 'Library', items: [
         { id: 'all',         label: 'All games',         icon: '▦' },
-        { id: 'installed',   label: 'Installed',         icon: '●' },
+        { id: 'on_pc',       label: 'On this PC',        icon: '◉' },
+        { id: 'installed',   label: 'wiz3D installed',   icon: '●' },
         { id: 'recent',      label: 'Recently played',   icon: '↻', sort: 'recent' },
     ]},
     // Games that render both eyes themselves; wiz3D only switches it on.
     { title: 'Native 3D Games', items: [
+        { id: 'native_all',   label: 'All native 3D games',     icon: '◇' },
         { id: 'mod_hd3d',     label: 'AMD HD3D',                icon: '◆' },
         { id: 'mod_3dv_dm',   label: '3D Vision Direct Mode',   icon: '◈' },
         { id: 'mod_ogl_qbs',  label: 'OpenGL Quad-Buffer',      icon: '▣' },
@@ -2928,11 +2931,14 @@ function visibleFilterItems(group) {
     return group.items;
 }
 
+const NATIVE_WIZ3D_TYPES = ['wiz3d_hd3d', 'wiz3d_3dvision_dm', 'wiz3d_opengl'];
 function buildFilterPredicate(id) {
     if (id.startsWith('wiz3d_')) {
         const status = id.slice('wiz3d_'.length);
         return g => (g.site_status || g.wiz3d_status) === status;
     }
+    if (id === 'native_all') return g => (g.fix_types || []).some(t => NATIVE_WIZ3D_TYPES.includes(t));
+    if (id === 'on_pc') return g => !!(g.user_game || window._scannedPaths?.[g.id]);
     if (id.startsWith('api_')) {
         const api = id.slice('api_'.length);
         return g => (g.graphics_apis || []).includes(api);
@@ -4420,6 +4426,17 @@ async function autoDownloadWiz3D() {
     refreshWiz3DStatus();
 }
 
+// Steam lists libraries on drives that may be unplugged; their games can't
+// be found until the drive is back, so say so instead of leaving them out silently.
+async function warnOfflineSteamLibraries() {
+    const libs = await window.api.steamLibraries();
+    const missing = (libs || []).filter(l => !l.available).map(l => l.path);
+    if (!missing.length) return;
+    console.warn('[steam] Libraries not connected:', missing.join(', '));
+    showNotice(`Steam library ${missing.join(', ')} isn't connected, so the games on it aren't listed. ` +
+               'Connect the drive, then press ↻ next to the search box.');
+}
+
 // ── Stereopticon updates ─────────────────────────────────────────
 let _appUpdate = null;
 async function checkAppUpdate(manual) {
@@ -4457,8 +4474,9 @@ async function installAppUpdate() {
     const res = await window.api.appUpdateInstall();
     stop();
     if (!res.success) {
-        if (status) status.textContent = `Update failed: ${res.message}`;
-        if (btn) btn.disabled = false;
+        // Fall back to the release page, where the installer can be downloaded by hand.
+        if (status) status.textContent = `The update could not be installed automatically (${res.message}). Download it from the release page instead.`;
+        if (btn) { btn.disabled = false; btn.textContent = 'Open download page'; btn.onclick = () => window.api.openUrl(r.latest.url); }
     } else if (status) {
         status.textContent = 'Restarting to install the update…';
     }

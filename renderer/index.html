@@ -239,8 +239,8 @@
         :root[data-theme="light"] .glass-btn:hover,@media (prefers-color-scheme: light){:root:not([data-theme]) .glass-btn:hover{background:rgba(31,28,25,0.16);}}
         .installed-dot{color:var(--teal);font-size:8px;margin-right:7px;vertical-align:middle;opacity:0.8;}
         .disp-group-label{font-family:var(--font-display);font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.2px;font-weight:700;padding:6px 0 4px 0;margin-top:4px;}
-        .disp-group-row{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;}
-        .disp-card{flex:1;min-width:130px;max-width:200px;padding:5px 8px !important;border-radius:5px !important;cursor:pointer;border:1px solid var(--glass-border) !important;transition:all 0.15s;}
+        .disp-group-row{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;}
+        .disp-card{min-width:0;padding:8px 10px !important;border-radius:5px !important;cursor:pointer;border:1px solid var(--glass-border) !important;transition:all 0.15s;}
         .disp-card:hover{border-color:var(--teal-border) !important;background:var(--teal-glow) !important;}
         .disp-card.selected{border-color:var(--teal-border) !important;background:var(--teal-glow) !important;color:var(--text-primary) !important;}
         .disp-card .dd-sub{font-size:9px;margin-top:1px;}
@@ -470,6 +470,8 @@
     .news-item-title { font-size:12px;color:var(--text-primary); }
     .news-item-meta { font-size:10px;color:var(--text-dim);margin-top:2px; }
     .news-item-sum { font-size:11px;color:var(--text-secondary);margin-top:4px;line-height:1.45; }
+    body.wiz3d-only .other-tool-display { display:none !important; }
+    .disp-card .dd-icon { width:18px;text-align:center;color:var(--teal);font-size:14px; }
     #wiz3dGameOptions { grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important; }
     #wiz3dGameOptions .wiz3d-actions { grid-column: 1 / -1; display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
     #reportModal .modal-content { box-sizing:border-box; max-height:calc(100vh - 32px) !important; max-width:calc(100vw - 32px); padding:22px; }
@@ -496,66 +498,53 @@
 <button id="btnHelp" style="display:none;"></button>
 
 <!-- DISPLAY DROPDOWN -->
-<div class="tb-dropdown" id="displayDropdown" style="min-width:520px;padding:12px;">
+<div class="tb-dropdown" id="displayDropdown" style="width:560px;max-width:calc(100vw - 32px);box-sizing:border-box;padding:14px;">
     <div class="dd-header" style="margin-bottom:10px;">Select your 3D display</div>
-    <!-- None selected -->
-    <div class="dd-option selected" data-value="none" data-label="Display: None Selected" style="margin-bottom:8px;">
-        <span class="dd-icon" style="opacity:0.3;">◌</span>
-        <div class="dd-label" style="color:var(--text-dim);">None selected<div class="dd-sub">Pick your display to auto-configure output format</div></div>
-    </div>
-    <div class="dd-section" style="margin-bottom:8px;"></div>
-    <!-- Grouped display picker rendered by JS into #displayGroupWrap -->
+    <!-- Grouped display picker. Cards marked other-tool-display need tools
+         beyond wiz3D and are hidden in wiz3D-only mode. -->
     <div id="displayGroupWrap">
-        <!-- Group: Glasses-Free -->
-        <div class="disp-group-label">◌ Glasses-Free</div>
+        <div class="disp-group-label">Glasses-free</div>
         <div class="disp-group-row">
-            <div class="dd-option disp-card" data-value="sr_display" data-output="sr_weave" data-label="Simulated Reality Display" data-note="Acer SpatialLabs, Samsung Odyssey 3D, Dimenco. Requires SR Weave via 3DGameBridge.">
-                <span class="dd-icon">🖥️</span><div class="dd-label">Simulated Reality<div class="dd-sub">SpatialLabs · Samsung Odyssey 3D · Dimenco</div></div>
+            <div class="dd-option disp-card" data-value="sr_display" data-output="sr_weave" data-label="Simulated Reality Display" data-note="Acer SpatialLabs, Samsung Odyssey 3D, Asus Spatial Vision, Dimenco. wiz3D weaves the image for the panel itself.">
+                <span class="dd-icon">◈</span><div class="dd-label">Simulated Reality<div class="dd-sub">SpatialLabs · Odyssey 3D · Spatial Vision · Dimenco</div></div>
             </div>
-
-            <div class="dd-option disp-card" data-value="looking_glass" data-output="lkg_quilt" data-label="Looking Glass" data-note="Looking Glass holographic display. Multi-view quilt rendering.">
-                <span class="dd-icon">🔍</span><div class="dd-label">Looking Glass<div class="dd-sub">Holographic · Multi-view quilt</div></div>
+            <div class="dd-option disp-card other-tool-display" data-value="looking_glass" data-output="lkg_quilt" data-label="Looking Glass" data-note="Looking Glass holographic display. Multi-view quilt rendering.">
+                <span class="dd-icon">◫</span><div class="dd-label">Looking Glass<div class="dd-sub">Holographic · multi-view quilt</div></div>
             </div>
         </div>
-        <!-- Group: Passive Glasses -->
-        <div class="disp-group-label">👓 Passive Glasses</div>
+        <div class="disp-group-label">Glasses</div>
         <div class="disp-group-row">
-            <div class="dd-option disp-card" data-value="anaglyph" data-output="anaglyph" data-label="Anaglyph Glasses" data-note="Works on any monitor. Red/Cyan, Green/Magenta, Amber/Blue or Yellow/Blue colour-filter glasses.">
-                <span class="dd-icon">🔴</span><div class="dd-label">Anaglyph<div class="dd-sub">Red/Cyan · Green/Magenta · Any monitor</div></div>
+            <div class="dd-option disp-card" data-value="anaglyph" data-output="anaglyph" data-label="Anaglyph Glasses" data-note="Works on any monitor with red/cyan glasses.">
+                <span class="dd-icon">◍</span><div class="dd-label">Anaglyph<div class="dd-sub">Red/cyan glasses · any monitor</div></div>
             </div>
-            <div class="dd-option disp-card" data-value="polarized" data-output="interleaved" data-label="Polarized (Row-Interleaved)" data-note="LG Cinema 3D and other row-interleaved displays. Standard passive polarized glasses.">
-                <span class="dd-icon">🌀</span><div class="dd-label">Polarized<div class="dd-sub">LG Cinema 3D · Row-interleaved · Passive glasses</div></div>
+            <div class="dd-option disp-card" data-value="polarized" data-output="interleaved" data-label="Polarized (Row-Interleaved)" data-note="LG Cinema 3D and other row-interleaved displays with passive polarised glasses.">
+                <span class="dd-icon">☰</span><div class="dd-label">Polarised<div class="dd-sub">Row-interleaved · LG Cinema 3D</div></div>
+            </div>
+            <div class="dd-option disp-card" data-value="shutter" data-output="frame_sequential" data-label="Active Shutter Glasses" data-note="120 Hz or faster display. NVIDIA 3D Vision, DLP Link or VESA shutter glasses.">
+                <span class="dd-icon">▣</span><div class="dd-label">Shutter glasses<div class="dd-sub">3D Vision · DLP Link · 120 Hz+</div></div>
+            </div>
+            <div class="dd-option disp-card other-tool-display" data-value="hdmi_3d" data-output="frame_packing" data-label="3D TV / HDMI Frame Packing" data-note="HDMI 1.4 frame packing, the Blu-ray 3D standard.">
+                <span class="dd-icon">▤</span><div class="dd-label">HDMI frame packing<div class="dd-sub">HDMI 1.4 3D TVs and projectors</div></div>
             </div>
         </div>
-        <!-- Group: Active Shutter -->
-        <div class="disp-group-label">🕶️ Active Shutter</div>
+        <div class="disp-group-label">TVs, glasses-style displays and headsets</div>
         <div class="disp-group-row">
-            <div class="dd-option disp-card" data-value="shutter" data-output="frame_sequential" data-label="Active Shutter Glasses" data-note="120Hz+ display required. NVIDIA 3D Vision (IR emitter), DLP Link (projector sync), or VESA shutter glasses.">
-                <span class="dd-icon">🕶️</span><div class="dd-label">Shutter Glasses<div class="dd-sub">3D Vision · DLP Link · VESA · 120Hz+</div></div>
+            <div class="dd-option disp-card" data-value="sbs_generic" data-output="sbs_half" data-label="Side by Side (SBS)" data-note="Half-width side-by-side, for any display or TV with an SBS 3D mode.">
+                <span class="dd-icon">▥</span><div class="dd-label">Side-by-side<div class="dd-sub">3D TVs · projectors · SBS mode</div></div>
             </div>
-            <div class="dd-option disp-card" data-value="hdmi_3d" data-output="frame_packing" data-label="3D TV / HDMI Frame Packing" data-note="HDMI 1.4 Frame Packing. Blu-ray 3D standard. Requires a 3D TV or projector with HDMI 1.4 support.">
-                <span class="dd-icon">📺</span><div class="dd-label">3D TV / HDMI Frame Packing<div class="dd-sub">HDMI 1.4 · Blu-ray 3D · Active shutter TV glasses</div></div>
+            <div class="dd-option disp-card" data-value="tab_generic" data-output="tab_half" data-label="Top and Bottom (TAB)" data-note="Half-height top-and-bottom, for any display or TV with a TAB 3D mode.">
+                <span class="dd-icon">▤</span><div class="dd-label">Top-and-bottom<div class="dd-sub">3D TVs · projectors · TAB mode</div></div>
+            </div>
+            <div class="dd-option disp-card" data-value="ar_glasses" data-output="sbs" data-label="AR Glasses" data-note="Xreal, Viture, RayNeo and similar glasses in their SBS 3D mode.">
+                <span class="dd-icon">◎</span><div class="dd-label">AR glasses<div class="dd-sub">Xreal · Viture · RayNeo (SBS mode)</div></div>
+            </div>
+            <div class="dd-option disp-card other-tool-display" data-value="vr_headset" data-output="vr_native" data-label="VR Headset" data-note="Quest, Index, Vive, PSVR and other OpenXR headsets.">
+                <span class="dd-icon">⊡</span><div class="dd-label">VR headset<div class="dd-sub">Quest · Index · PSVR · OpenXR</div></div>
             </div>
         </div>
-        <!-- Group: AR / VR -->
-        <div class="disp-group-label">🥽 AR &amp; VR</div>
-        <div class="disp-group-row">
-            <div class="dd-option disp-card" data-value="ar_glasses" data-output="sbs" data-label="AR Glasses" data-note="Xreal, Viture, RayNeo, TCL RayNeo and similar AR glasses. Set to SBS / 3D mode — they split the image per-eye internally.">
-                <span class="dd-icon">👓</span><div class="dd-label">AR Glasses<div class="dd-sub">Xreal · Viture · RayNeo · SBS mode</div></div>
-            </div>
-            <div class="dd-option disp-card" data-value="vr_headset" data-output="vr_native" data-label="VR Headset" data-note="Quest, Index, Vive, PSVR and all OpenXR headsets. Uses SteamVR / OpenXR native output.">
-                <span class="dd-icon">🥽</span><div class="dd-label">VR Headset<div class="dd-sub">Quest · Index · PSVR · OpenXR</div></div>
-            </div>
-        </div>
-        <!-- Group: Direct Output -->
-        <div class="disp-group-label">📡 Direct / Generic</div>
-        <div class="disp-group-row">
-            <div class="dd-option disp-card" data-value="sbs_generic" data-output="sbs_half" data-label="Side by Side (SBS)" data-note="Half-width SBS. Standard format — each eye gets half horizontal resolution. For any display with a built-in SBS 3D mode.">
-                <span class="dd-icon">↔️</span><div class="dd-label">Side by Side<div class="dd-sub">Half-width SBS · Any SBS-capable display</div></div>
-            </div>
-            <div class="dd-option disp-card" data-value="tab_generic" data-output="tab_half" data-label="Top and Bottom (TAB)" data-note="Half-height TAB. Standard format — each eye gets half vertical resolution.">
-                <span class="dd-icon">↕️</span><div class="dd-label">Top and Bottom<div class="dd-sub">Half-height TAB · Any TAB-capable display</div></div>
-            </div>
+        <div class="dd-option" data-value="none" data-label="Display: None Selected" style="margin-top:6px;">
+            <span class="dd-icon" style="opacity:0.4;">◌</span>
+            <div class="dd-label" style="color:var(--text-dim);">None<div class="dd-sub">Choose the output yourself</div></div>
         </div>
     </div>
 </div>

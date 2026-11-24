@@ -1,9 +1,8 @@
 name: CI
 
-# Runs the test suite on every push and pull request.
+# Runs the tests on every pull request. Pushes to main are tested and built by
+# the Nightly workflow (nightly.yml), which grew out of PR #4.
 on:
-  push:
-    branches: [main]
   pull_request:
 
 permissions:
@@ -22,12 +21,3 @@ jobs:
       - run: npm test
       - name: Build the catalogue bundle
         run: npm run bundle
-      - run: npm run dist
-      - name: upload a workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: stereopticon-windows
-          path: |
-            dist/*.exe
-            dist/*.zip
-          if-no-files-found: error

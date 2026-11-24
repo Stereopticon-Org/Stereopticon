@@ -4,8 +4,9 @@
  *
  * Updates for Stereopticon itself, from its GitHub releases.
  *
- *   Installed copy (Setup.exe): electron-updater downloads the new installer
- *   and runs it when the user says so.
+ *   Installed copy (Setup.exe): the new release's installer is downloaded and
+ *   started, and Stereopticon quits so it can replace the files. Works the
+ *   same for releases and nightly pre-releases.
  *   Portable copy or running from source: no self-update; the user is sent to
  *   the release page.
  *
@@ -66,8 +67,11 @@ async function check() {
     const current = electronApp?.getVersion?.() || require('../package.json').version;
     const releases = (await fetchReleases()).filter(r => !r.draft && (channel === 'beta' || !r.prerelease));
     const rel = releases[0];
+    const setup = rel && (rel.assets || []).find(a => /Setup.*\.exe$/i.test(a.name));
     const latest = rel ? { version: rel.tag_name.replace(/^v/, ''), name: rel.name || rel.tag_name,
-                           url: rel.html_url, prerelease: !!rel.prerelease } : null;
+                           url: rel.html_url, prerelease: !!rel.prerelease,
+                           setupUrl: setup?.browser_download_url || null, setupName: setup?.name || null,
+                           setupSize: setup?.size || 0 } : null;
     return {
         current, latest, channel,
         updateAvailable: !!(latest && isNewer(latest.version, current)),
@@ -75,20 +79,38 @@ async function check() {
     };
 }
 
-/** Download the update with electron-updater, then quit and run the installer. */
+function download(url, dest, size, onProgress, redirects = 5) {
+    return new Promise((resolve, reject) => {
+        https.get(url, { headers: { 'User-Agent': 'Stereopticon' } }, res => {
+            if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects > 0) {
+                res.resume();
+                resolve(download(new URL(res.headers.location, url).toString(), dest, size, onProgress, redirects - 1));
+                return;
+            }
+            if (res.statusCode !== 200) { res.resume(); reject(new Error(`GitHub returned HTTP ${res.statusCode}`)); return; }
+            const total = Number(res.headers['content-length']) || size || 0;
+            let done = 0;
+            const out = fs.createWriteStream(dest);
+            res.on('data', c => { done += c.length; if (total) onProgress(Math.round(done / total * 100)); });
+            res.on('error', reject); out.on('error', reject);
+            out.on('finish', () => resolve());
+            res.pipe(out);
+        }).on('error', reject);
+    });
+}
+
+/** Download the newer installer, start it, and quit so it can update the files. */
 async function downloadAndInstall(onProgress = () => {}) {
     if (!isInstalledCopy()) throw new Error('Only the installed copy can update itself. Download the new version from the release page.');
-    const { autoUpdater } = require('electron-updater');
-    autoUpdater.autoDownload = false;
-    autoUpdater.allowPrerelease = appSettings.get('appChannel') === 'beta';
-    autoUpdater.on('download-progress', p => onProgress(Math.round(p.percent || 0)));
-    const result = await autoUpdater.checkForUpdates();
-    if (!result?.updateInfo || !isNewer(result.updateInfo.version, electronApp.getVersion())) {
-        throw new Error('No newer version was found.');
-    }
-    await autoUpdater.downloadUpdate();
-    setImmediate(() => autoUpdater.quitAndInstall(false, true));
-    return { version: result.updateInfo.version };
+    const info = await check();
+    if (!info.updateAvailable) throw new Error('No newer version was found.');
+    if (!info.latest.setupUrl) throw new Error(`Release ${info.latest.version} has no installer to download.`);
+    const dest = path.join(require('os').tmpdir(), info.latest.setupName);
+    await download(info.latest.setupUrl, dest, info.latest.setupSize, onProgress);
+    const { spawn } = require('child_process');
+    spawn(dest, [], { detached: true, stdio: 'ignore' }).unref();
+    setTimeout(() => electronApp.quit(), 500);
+    return { version: info.latest.version };
 }
 
 module.exports = { check, downloadAndInstall, isNewer, isInstalledCopy };

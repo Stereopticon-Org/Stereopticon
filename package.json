@@ -79,7 +79,6 @@
   "dependencies": {
     "7zip-bin": "^5.2.0",
     "adm-zip": "^0.5.16",
-    "electron-updater": "^6.8.11",
     "node-7z": "^3.0.0"
   },
   "devDependencies": {

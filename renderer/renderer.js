@@ -2779,10 +2779,10 @@ const FILTER_GROUPS = [
     { title: 'Native 3D Games', items: [
         { id: 'mod_hd3d',     label: 'AMD HD3D',                icon: '◆' },
         { id: 'mod_3dv_dm',   label: '3D Vision Direct Mode',   icon: '◈' },
-        { id: 'mod_ogl_qbs',  label: 'OpenGL quad-buffer',      icon: '▣' },
+        { id: 'mod_ogl_qbs',  label: 'OpenGL Quad-Buffer',      icon: '▣' },
     ]},
-    { title: 'Graphics API', items: [
-        { id: 'api_dx7',    label: 'DirectX 7 and older', icon: '▫' },
+    { title: 'Stereo Injector', items: [
+        { id: 'api_dx7',    label: 'DirectX 7',           icon: '▫' },
         { id: 'api_dx8',    label: 'DirectX 8',           icon: '▫' },
         { id: 'api_dx9',    label: 'DirectX 9',           icon: '▪' },
         { id: 'api_dx10',   label: 'DirectX 10',          icon: '▪' },
@@ -3253,6 +3253,16 @@ function _continueSelectGame(game) {
     const scannedPath = window._scannedPaths?.[game.id] || game.install_dir || '';
     const defaultPath = String(game.default_path || '').replace(/[/\\][^/\\]+\.\w+$/i, '');
     setInstallPath(savedPath || scannedPath || defaultPath);
+    // A remembered folder can go stale (a drive letter changed, the game
+    // moved). When it no longer exists and the scan found the game, use that.
+    if (savedPath && scannedPath && savedPath !== scannedPath) {
+        window.api.pathExists(savedPath).then(ok => {
+            if (ok || selectedGame?.id !== game.id) return;
+            console.warn(`[paths] ${game.title}: saved folder ${savedPath} is gone; using ${scannedPath}`);
+            setInstallPath(scannedPath);
+            saveGamePathToStorage(game.id, scannedPath);
+        }).catch(() => {});
+    }
 
     updateBottomBar();
     loadReshadeStatus();
@@ -3487,10 +3497,10 @@ function renderDetailView() {
                     ${wiz3dStatusHtml(selectedProfile)}
                 </div>
                 <div class="detail-hero-actions">
+                    <button class="hero-btn hero-btn-ghost" title="Game details: name, artwork, API" onclick="openDetailsModal()">⚙</button>
                     <button id="btnInstallFix" class="hero-btn hero-btn-secondary" onclick="handleInstallClick()">⇩ Install Fix</button>
                     <button id="btnLaunchGame" class="hero-btn hero-btn-primary" onclick="handleLaunchClick()">▶ Launch</button>
                     <button id="btnUninstallMain" class="hero-btn hero-btn-ghost" title="Uninstall Fix" onclick="handleUninstallClick()" style="display:none;">🗑</button>
-                    <button class="hero-btn hero-btn-ghost" title="Game details: name, artwork, API" onclick="openDetailsModal()">⚙</button>
                 </div>
             </div>
         </div>
@@ -4471,10 +4481,15 @@ async function renderAboutTab() {
           (rel?.releases?.[0] && rel.releases[0].tag !== cur ? `<br><span style="color:var(--text-dim);">Newest published: ${esc(rel.releases[0].tag)}</span>` : '')
         : 'None downloaded yet.';
 
+}
+
+// ── News tab ─────────────────────────────────────────────────────
+async function renderNewsTab() {
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     // News from stereopticon.org (posts and project releases).
     const newsBox = document.getElementById('aboutNews');
     const n = await window.api.siteNews();
-    const items = (n?.data?.items || []).slice(0, 6);
+    const items = (n?.data?.items || []).slice(0, 12);
     newsBox.innerHTML = items.length ? items.map(it => {
         const url = it.url || `https://stereopticon.org/#post-${it.id}`;
         return `<div class="news-item" data-url="${esc(url)}">
@@ -4589,6 +4604,7 @@ window.switchSettingsTab = async function(tab) {
 
     if (tab === 'monitors') await renderMonitorsTab();
     if (tab === 'about') await renderAboutTab();
+    if (tab === 'news') await renderNewsTab();
     if (tab === 'general') refreshLoomStatus();
 };
 
@@ -4845,7 +4861,7 @@ async function refreshWiz3DStatus({ notifyUpdate = false } = {}) {
         btn.disabled = false;
     }
     if (notifyUpdate && st.updateAvailable && st.installed) {
-        showNotice(`wiz3D ${st.latest.tag} is available. Settings → Display & Output → wiz3D to update.`);
+        showNotice(`wiz3D ${st.latest.tag} is available. Settings → General → wiz3D to update.`);
     }
     return st;
 }
@@ -5108,6 +5124,17 @@ function applyDisplayMappingToGlobalSelects(profileId) {
     return true;
 }
 
+// Hardware the Monitors tab can detect → the output preset it needs.
+const DETECTED_HARDWARE_PRESET = {
+    acer_spatiallabs: 'sr_weave',
+};
+function presetForDetected(p) {
+    if (DISPLAY_TO_OUTPUT[p.id]) return p.id;
+    if (DETECTED_HARDWARE_PRESET[p.id]) return DETECTED_HARDWARE_PRESET[p.id];
+    if (p.type === 'glasses_free') return 'sr_weave';
+    return null;
+}
+
 async function runFirstRunCheck() {
     if (isFirstRunDone()) return;
     let detected = [];
@@ -5115,7 +5142,9 @@ async function runFirstRunCheck() {
     try {
         const result = await window.api.displayGetSettings?.();
         if (result?.success && Array.isArray(result.profiles)) {
-            detected = result.profiles.filter(p => p.detected && p.id !== 'default' && DISPLAY_TO_OUTPUT[p.id]);
+            // Detected hardware (e.g. 'acer_spatiallabs') stands for an output preset ('sr_weave').
+            detected = result.profiles.filter(p => p.detected && p.id !== 'default' && presetForDetected(p))
+                .map(p => ({ ...p, hardware_label: p.hardware_label || p.label, id: presetForDetected(p) }));
             // Pull the manufacturer/model string if the backend supplied one.
             // displayGetSettings can include `hardware_label` / `model` /
             // `detected_label` per profile — surface whichever exists.

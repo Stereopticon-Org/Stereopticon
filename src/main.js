@@ -984,6 +984,7 @@ ipcMain.handle('steam:search', async (_, { term }) => {
     });
 });
 
+ipcMain.handle('fs:exists', (_, p) => !!p && fs.existsSync(p));
 ipcMain.handle('shell:showItem', (_, p) => { if (p && fs.existsSync(p)) shell.showItemInFolder(p); return true; });
 
 ipcMain.handle('app:version', () => {

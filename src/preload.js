@@ -187,6 +187,7 @@ getDisplaySoftwareStatus:  (familyId, deviceId)        =>
     openLogs:     ()    => ipcRenderer.invoke('logs:open'),
     createReport: (ctx) => ipcRenderer.invoke('report:create', ctx),
     showItem:     (p)   => ipcRenderer.invoke('shell:showItem', p),
+    pathExists:   (p)   => ipcRenderer.invoke('fs:exists', p),
 });
 
 // Uncaught errors in the window go to Stereopticon's log file. (Console

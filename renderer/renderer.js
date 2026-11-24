@@ -4572,10 +4572,56 @@ async function checkAppUpdate(manual) {
         btn.onclick = r.updateAvailable ? installAppUpdate : () => checkAppUpdate(true);
     }
     if (!manual && r.updateAvailable) {
-        showNotice(`Stereopticon ${r.latest.version} is available. Settings → About to update.`);
+        showAppUpdatePopup(r);
     }
     return r;
 }
+async function refreshAppVersionLine() {
+    const info = await window.api.getAppVersion();
+    const el = document.getElementById('aboutVersion');
+    if (el) el.textContent = `Stereopticon ${info?.version ? 'v' + info.version : ''}`;
+}
+
+// A pop-up when a newer Stereopticon is out: update now, later, or skip it.
+const SKIPPED_UPDATE_KEY = 'stereopticon.skippedUpdate';
+function showAppUpdatePopup(r) {
+    try { if (localStorage.getItem(SKIPPED_UPDATE_KEY) === r.latest.version) return; } catch {}
+    const modal = document.getElementById('appUpdateModal');
+    if (!modal) return;
+    document.getElementById('appUpdateTitle').textContent = `Stereopticon ${r.latest.version} is available`;
+    document.getElementById('appUpdateText').textContent =
+        `You have ${r.current}. ` + (r.latest.prerelease
+            ? 'This is a nightly build: the newest changes, tested less than a release.'
+            : 'This is a release.') +
+        (r.canInstall ? ' Stereopticon downloads the installer, closes, and the installer updates it.'
+                      : ' This copy cannot update itself (portable or run from source), so the download page opens.');
+    const status = document.getElementById('appUpdatePopupStatus');
+    status.textContent = '';
+    const go = document.getElementById('appUpdateNowBtn');
+    go.textContent = r.canInstall ? 'Update now' : 'Open download page';
+    go.disabled = false;
+    go.onclick = async () => {
+        if (!r.canInstall) { window.api.openUrl(r.latest.url); modal.style.display = 'none'; return; }
+        go.disabled = true;
+        const stop = window.api.onAppUpdateProgress(p => { status.textContent = `Downloading… ${p}%`; });
+        const res = await window.api.appUpdateInstall();
+        stop();
+        if (res.success) status.textContent = 'Starting the installer…';
+        else {
+            status.textContent = `Could not update automatically (${res.message}).`;
+            go.disabled = false; go.textContent = 'Open download page';
+            go.onclick = () => { window.api.openUrl(r.latest.url); modal.style.display = 'none'; };
+        }
+    };
+    document.getElementById('appUpdateNotesLink').onclick = () => { window.api.openUrl(r.latest.url); return false; };
+    document.getElementById('appUpdateLaterBtn').onclick = () => { modal.style.display = 'none'; };
+    document.getElementById('appUpdateSkipBtn').onclick = () => {
+        try { localStorage.setItem(SKIPPED_UPDATE_KEY, r.latest.version); } catch {}
+        modal.style.display = 'none';
+    };
+    modal.style.display = 'flex';
+}
+
 async function installAppUpdate() {
     const r = _appUpdate;
     if (!r?.updateAvailable) return;
@@ -4599,8 +4645,8 @@ async function installAppUpdate() {
 async function renderAboutTab() {
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const info = await window.api.getAppVersion();
-    document.getElementById('aboutVersion').textContent = `Stereopticon ${info?.version ? 'v' + info.version : ''}`;
-    checkAppUpdate(true);
+    const vt = document.getElementById('aboutVersionText');
+    if (vt) vt.textContent = `Stereopticon ${info?.version ? 'v' + info.version : ''}`;
 
     // wiz3D versions on this PC, and which games are pinned to one.
     const rel = await window.api.wiz3dListReleases();
@@ -4777,7 +4823,7 @@ window.switchSettingsTab = async function(tab) {
     if (tab === 'monitors') await renderMonitorsTab();
     if (tab === 'about') await renderAboutTab();
     if (tab === 'news') await renderNewsTab();
-    if (tab === 'general') { refreshLoomStatus(); renderGameLibrariesPanel(); renderWiz3DBuilds(); }
+    if (tab === 'general') { refreshAppVersionLine(); checkAppUpdate(true); refreshLoomStatus(); renderGameLibrariesPanel(); renderWiz3DBuilds(); }
 };
 
 // ── HT axes per-game + experimental roll (Phase 2e) ──────────

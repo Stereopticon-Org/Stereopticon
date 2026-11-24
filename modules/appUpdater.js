@@ -70,7 +70,10 @@ async function check() {
     // those are offered whichever channel is chosen.
     const stable = published.filter(r => !r.prerelease);
     const releases = channel === 'beta' || !stable.length ? published : stable;
-    const rel = releases[0];
+    // GitHub does not return releases newest first (it gave nightly 8, 4,
+    // then 10), so take the highest version, not the first in the list.
+    const rel = releases.reduce((best, r) =>
+        !best || isNewer(r.tag_name.replace(/^v/, ''), best.tag_name.replace(/^v/, '')) ? r : best, null);
     const setup = rel && (rel.assets || []).find(a => /Setup.*\.exe$/i.test(a.name));
     const latest = rel ? { version: rel.tag_name.replace(/^v/, ''), name: rel.name || rel.tag_name,
                            url: rel.html_url, prerelease: !!rel.prerelease,

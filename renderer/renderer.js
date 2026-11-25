@@ -915,6 +915,17 @@ function updateBottomBar() {
     const modBtn     = document.getElementById('btnModSettings');
 
     const isWiz = isWiz3DType(selectedProfile.type);
+    if (selectedProfile.type === 'native_3d') {
+        btnInstall.textContent = 'No install needed';
+        btnInstall.className   = 'hero-btn hero-btn-secondary';
+        btnInstall.disabled    = true;
+        btnLaunch.className    = 'hero-btn hero-btn-primary';
+        btnLaunch.disabled     = false;
+        btnLaunch.style.display = '';
+        if (btnUninst) btnUninst.style.display = 'none';
+        if (modBtn) modBtn.style.display = 'none';
+        return;
+    }
     if (installed) {
         btnInstall.textContent = isWiz ? '✓ wiz3D Installed' : '✓ Fix Installed';
         btnInstall.className   = 'hero-btn hero-btn-installed';
@@ -1065,6 +1076,51 @@ function wiz3dOptionsHtml() {
                 <button class="link-btn" onclick="openGameFiles()">Open game folder</button>
                 ${removeBtn}
                 <button class="link-btn" style="border-color:var(--teal-border);color:var(--teal);" onclick="openReportModal('game')">Report a result</button>
+            </div>
+        </div>`;
+}
+
+// ── Games with their own 3D mode ──────────────────────────────────
+const NATIVE_FORMAT_NAMES = { sbs: 'side-by-side', tab: 'top-and-bottom', interlaced: 'interleaved', checkerboard: 'checkerboard',
+    anaglyph: 'anaglyph', frame_packing: 'HDMI frame packing', frame_sequential: 'shutter glasses',
+    hd3d: 'AMD HD3D', '3dvision': 'Nvidia 3D Vision', quadbuffer: 'OpenGL quad-buffer', sr: 'glasses-free 3D displays' };
+function isSrDisplaySelected() {
+    return selectedDisplay === 'sr_display' || getEffectiveOutputIdFromSelects?.() === 'sr_weave';
+}
+// Stereo Loom turns a side-by-side picture into SR weave; worth starting with the game.
+function nativeWantsLoom(fix) {
+    if (!fix || fix.type !== 'native_3d' || fix.native_exclusive) return false;
+    const f = fix.native_formats || [];
+    return isSrDisplaySelected() && (!f.length || f.includes('sbs'));
+}
+function nativeOptionsHtml() {
+    const fix = selectedProfile;
+    if (!fix || fix.type !== 'native_3d') return '';
+    const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const formats = (fix.native_formats || []).map(f => NATIVE_FORMAT_NAMES[f]).filter(Boolean);
+    const where = fix.native_enable === 'config file' ? 'by editing a config file'
+                : fix.native_enable === 'launch option' ? 'with a launch option' : "in the game's video or display settings";
+    let loomLine = '';
+    try {
+        if (fix.native_exclusive) loomLine = `Only works with ${esc(fix.native_exclusive)}.`;
+        else if (nativeWantsLoom(fix)) loomLine = (localStorage.getItem('stereopticon.nativeLoom') === 'false')
+            ? 'Stereo Loom is not started with this game (turn it on below).'
+            : 'Your display is Simulated Reality: Stereopticon starts Stereo Loom with the game, which turns its side-by-side picture into glasses-free 3D.';
+    } catch {}
+    return `
+        <div id="nativeGameOptions" class="profile-selector" style="margin-top:10px;font-size:12px;color:var(--text-secondary);line-height:1.65;">
+            <label>Own 3D mode</label>
+            <div>Nothing to install. Switch 3D on ${where}${formats.length ? `; it can output ${esc(formats.join(', '))}` : ''}.
+                <a href="#" class="about-link" onclick="window.api.openUrl('${esc(fix.url || 'https://www.pcgamingwiki.com/wiki/Glossary:Native_3D')}');return false;">Steps on PCGamingWiki ↗</a></div>
+            ${loomLine ? `<div style="margin-top:4px;">${loomLine}</div>` : ''}
+            ${nativeWantsLoom(fix) || localStorage.getItem('stereopticon.nativeLoom') === 'false' ? `
+            <label style="display:flex;gap:8px;align-items:center;margin-top:8px;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text-secondary);font-family:var(--font-body);font-weight:400;">
+                <input type="checkbox" ${localStorage.getItem('stereopticon.nativeLoom') === 'false' ? '' : 'checked'}
+                    onchange="try{localStorage.setItem('stereopticon.nativeLoom', this.checked ? 'true' : 'false')}catch{}; renderDetailView(); updateBottomBar();">
+                Start Stereo Loom with games that have their own 3D mode
+            </label>` : ''}
+            <div class="wiz3d-actions" style="margin-top:8px;">
+                <button class="link-btn" onclick="openGameFiles()">Open game folder</button>
             </div>
         </div>`;
 }
@@ -1937,7 +1993,21 @@ async function handleLaunchClick() {
         // The pipeline runs either way: it is resolved from the fix and the output.
         const displayId = (selectedDisplay && selectedDisplay !== 'none') ? selectedDisplay : null;
 
-        if (selectedProfile) {
+        // A game with its own 3D mode needs nothing configured; on a Simulated
+        // Reality display, Stereo Loom turns its side-by-side picture into 3D.
+        let nativeHandled = false;
+        if (selectedProfile?.type === 'native_3d') {
+            nativeHandled = true;
+            let loomOn = true;
+            try { loomOn = localStorage.getItem('stereopticon.nativeLoom') !== 'false'; } catch {}
+            if (nativeWantsLoom(selectedProfile) && loomOn) {
+                setProgress(88, 'Starting Stereo Loom…', null);
+                const loom = await window.api.loomOpen();
+                if (!loom?.success) showResult(false, `Stereo Loom could not start: ${loom?.message || 'unknown error'}. The game starts anyway.`);
+            }
+        }
+
+        if (selectedProfile && !nativeHandled) {
             setProgress(90, 'Applying pipeline configuration…', null);
             const pipelineResult = await window.api.executePipeline({
                 fix:         selectedProfile,
@@ -1971,7 +2041,7 @@ async function handleLaunchClick() {
             } else {
                 setProgress(92, htState.enabled ? `Headtracking: ${htState.method || 'on'}` : 'Pipeline applied', null);
             }
-        } else {
+        } else if (!nativeHandled) {
             console.warn('[Pipeline] Skipped (no displayId or no selectedProfile) — falling back to legacy Geo-11 sync');
             await applyGeo11SettingsBeforeLaunch();
         }
@@ -2525,7 +2595,7 @@ function filterAndSortGames(games) {
         // wiz3D-only mode: the games wiz3D has an entry for, plus every game
         // found on this PC (catalogue or not), which can try wiz3D untested.
         const onThisPc = !!(game.user_game || window._scannedPaths?.[game.id]);
-        if (!showOtherTools && !(game.fix_types || []).some(isWiz3DType) && !onThisPc) return false;
+        if (!showOtherTools && !(game.fix_types || []).some(isSupportedType) && !onThisPc) return false;
         const tryable = !showOtherTools && onThisPc;
         if (!showVrOnly && game.is_vr_only && !tryable) return false;
         if (!showDeprecated && game.is_deprecated_only && !tryable) return false;
@@ -2911,6 +2981,7 @@ const FILTER_GROUPS = [
     // Games that render both eyes themselves; wiz3D only switches it on.
     { title: 'Native 3D Games', items: [
         { id: 'native_all',   label: 'All native 3D games',     icon: '◇' },
+        { id: 'mod_native_3d', label: 'Own 3D mode (in-game)',  icon: '◆' },
         { id: 'mod_hd3d',     label: 'AMD HD3D',                icon: '◆' },
         { id: 'mod_3dv_dm',   label: '3D Vision Direct Mode',   icon: '◈' },
         { id: 'mod_ogl_qbs',  label: 'OpenGL Quad-Buffer',      icon: '▣' },
@@ -2985,6 +3056,7 @@ const RENDER_FILTER_TO_METHOD = {
 // separately so users can drill in.
 const MOD_FILTER_TO_TYPE = {
     mod_uevr:          'uevr',
+    mod_native_3d:     'native_3d',
     mod_geo11:         'geo11',
     mod_3dmigoto:      '3dmigoto',
     mod_wiz3d:         'wiz3d_wrapper',
@@ -3068,7 +3140,7 @@ function buildFilterPredicate(id) {
         const status = id.slice('wiz3d_'.length);
         return g => (g.site_status || g.wiz3d_status) === status;
     }
-    if (id === 'native_all') return g => (g.fix_types || []).some(t => NATIVE_WIZ3D_TYPES.includes(t));
+    if (id === 'native_all') return g => (g.fix_types || []).some(t => NATIVE_WIZ3D_TYPES.includes(t) || t === 'native_3d');
     if (id === 'on_pc') return g => !!(g.user_game || window._scannedPaths?.[g.id]);
     if (id.startsWith('api_')) {
         const api = id.slice('api_'.length);
@@ -3673,7 +3745,7 @@ function renderDetailView() {
                     </div>
                 </div>
             </div>
-            ${wiz3dOptionsHtml()}
+            ${wiz3dOptionsHtml()}${nativeOptionsHtml()}
         </div>
         <span id="metaHeadtracking" style="display:none;"></span>
         <div class="info-grid">
@@ -4877,6 +4949,8 @@ function isShowOtherTools() {
     try { return localStorage.getItem(SHOW_OTHER_TOOLS_KEY) === 'true'; }
     catch { return false; }
 }
+// Fix types this release can use: wiz3D, and games' own 3D modes.
+function isSupportedType(type) { return isWiz3DType(type) || type === 'native_3d'; }
 function isWiz3DType(type) {
     return typeof type === 'string' && type.startsWith('wiz3d');
 }
@@ -4887,7 +4961,7 @@ function applyToolMode() {
 applyToolMode();
 function visibleFixes(game) {
     const fixes = Array.isArray(game?.fixes) ? game.fixes : [];
-    const shown = isShowOtherTools() ? fixes : fixes.filter(f => isWiz3DType(f.type));
+    const shown = isShowOtherTools() ? fixes : fixes.filter(f => isSupportedType(f.type));
     // Any game without a wiz3D entry can still try wiz3D: offer an untested
     // fix whose render path comes from the game's .exe (or the game page).
     if (game && !fixes.some(f => isWiz3DType(f.type))) shown.push(tryWiz3DFix(game));

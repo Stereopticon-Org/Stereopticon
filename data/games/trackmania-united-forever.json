@@ -1,0 +1,40 @@
+{
+  "id": "trackmania_united_forever",
+  "title": "TrackMania United Forever",
+  "developer": "",
+  "graphics_api": "",
+  "default_path": "",
+  "exe_name": "",
+  "fixes": [
+    {
+      "id": "trackmania_united_forever_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [
+        "sbs",
+        "sbs_half",
+        "interlaced",
+        "anaglyph"
+      ],
+      "native_formats": [
+        "sbs",
+        "interlaced",
+        "anaglyph"
+      ],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/TrackMania_United_Forever",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (side-by-side, interleaved, anaglyph), switched on in the game's settings. PCGamingWiki has the steps."
+    }
+  ],
+  "steam_app_id": "7200"
+}

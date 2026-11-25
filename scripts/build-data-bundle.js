@@ -25,7 +25,7 @@ const OUT_SIDEBAR = path.join(DATA, '_sidebar.json');
 // `normaliseRenderingMethod` but lives here so the build step can
 // precompute filter data and the renderer doesn't need to walk every
 // game's fixes on startup.
-const NATIVE_STEREO_TYPES = new Set(['wiz3d_hd3d', 'wiz3d_opengl', 'wiz3d_3dvision_dm', 'native_stereo', 'native_legacy', '3d-vision']);
+const NATIVE_STEREO_TYPES = new Set(['wiz3d_hd3d', 'wiz3d_opengl', 'wiz3d_3dvision_dm', 'native_stereo', 'native_legacy', '3d-vision', 'native_3d']);
 // Deprecated stereo3D tech — fix types whose primary deployment path no
 // longer works on modern Windows/Nvidia drivers without wiz3D help. Games
 // whose ONLY fix types are in this set are hidden by default behind the

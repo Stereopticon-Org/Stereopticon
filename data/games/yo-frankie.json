@@ -1,0 +1,30 @@
+{
+  "id": "yo_frankie",
+  "title": "Yo Frankie!",
+  "developer": "",
+  "graphics_api": "",
+  "default_path": "",
+  "exe_name": "",
+  "fixes": [
+    {
+      "id": "yo_frankie_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [],
+      "native_formats": [],
+      "native_enable": "launch option",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Yo_Frankie!",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode, switched on in a launch option. PCGamingWiki has the steps."
+    }
+  ]
+}

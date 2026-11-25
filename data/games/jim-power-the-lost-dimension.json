@@ -1,0 +1,31 @@
+{
+  "id": "jim_power_the_lost_dimension",
+  "title": "Jim Power: The Lost Dimension",
+  "developer": "",
+  "graphics_api": "",
+  "default_path": "",
+  "exe_name": "",
+  "fixes": [
+    {
+      "id": "jim_power_the_lost_dimension_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Sequential-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [],
+      "native_formats": [],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Jim_Power%3A_The_Lost_Dimension",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode, switched on in the game's settings. PCGamingWiki has the steps."
+    }
+  ],
+  "steam_app_id": "370270"
+}

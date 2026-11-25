@@ -1,0 +1,23 @@
+{
+  "id": "native_3d",
+  "name": "Own 3D mode",
+  "category": "native",
+  "status": "active",
+  "cost": "free",
+  "open_source": false,
+  "url": "https://www.pcgamingwiki.com/wiki/Glossary:Native_3D",
+  "authors": [
+    "The game's developers"
+  ],
+  "rendering_method": "Dual-View Rendering",
+  "summary": "The game renders 3D itself and outputs it in a format such as side-by-side. Nothing is installed; you switch it on in the game (or its config file). On Simulated Reality displays, Stereo Loom turns the side-by-side picture into glasses-free 3D.",
+  "compatibility_notes": "Which formats a game outputs comes from PCGamingWiki's list of games with native 3D.",
+  "graphics_apis": [],
+  "supported_outputs": {
+    "sbs": [],
+    "tab": [],
+    "anaglyph": [],
+    "interleaved": [],
+    "sr_weave": []
+  }
+}

@@ -35,7 +35,36 @@
       "source": "3D/VR Compatibility Database (Airtable)",
       "compat_rating": 3,
       "compat_mode": "3D"
+    },
+    {
+      "id": "thief_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [
+        "sbs",
+        "sbs_half",
+        "tab",
+        "tab_half"
+      ],
+      "native_formats": [
+        "sbs",
+        "tab",
+        "hd3d"
+      ],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Thief",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (side-by-side, top-and-bottom, AMD HD3D), switched on in the game's settings. PCGamingWiki has the steps."
     }
   ],
-  "steam_app_id": ""
+  "steam_app_id": "239160"
 }

@@ -121,7 +121,29 @@
       "pros": "Tested with wiz3D — playable but with known caveats.",
       "cons": "See notes for the specific issues.",
       "notes": "Cross-mapped from HD3D native — wiz3D can also drive the original Nvidia 3D Vision Direct Mode for this game (Sniper Elite + Zombie Army franchises excepted)."
+    },
+    {
+      "id": "dirt_showdown_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": false,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [],
+      "native_formats": [
+        "hd3d"
+      ],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/DiRT_Showdown",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (AMD HD3D), switched on in the game's settings. PCGamingWiki has the steps."
     }
   ],
-  "steam_app_id": null
+  "steam_app_id": "201700"
 }

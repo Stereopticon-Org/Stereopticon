@@ -20,7 +20,36 @@
       "source": "3D/VR Compatibility Database (Airtable)",
       "compat_rating": 4,
       "compat_mode": "3D"
+    },
+    {
+      "id": "z_a_r_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [
+        "sbs",
+        "sbs_half",
+        "interlaced",
+        "frame_sequential"
+      ],
+      "native_formats": [
+        "sbs",
+        "interlaced",
+        "frame_sequential"
+      ],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Z.A.R.",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (side-by-side, interleaved, frame sequential (shutter glasses)), switched on in the game's settings. PCGamingWiki has the steps."
     }
   ],
-  "steam_app_id": ""
+  "steam_app_id": "351820"
 }

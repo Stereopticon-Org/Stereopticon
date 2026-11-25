@@ -1,0 +1,35 @@
+{
+  "id": "unearthed_trail_of_ibn_battuta_episode_1",
+  "title": "Unearthed: Trail of Ibn Battuta - Episode 1",
+  "developer": "",
+  "graphics_api": "",
+  "default_path": "",
+  "exe_name": "",
+  "fixes": [
+    {
+      "id": "unearthed_trail_of_ibn_battuta_episode_1_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [
+        "anaglyph"
+      ],
+      "native_formats": [
+        "anaglyph"
+      ],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Unearthed%3A_Trail_of_Ibn_Battuta_-_Episode_1",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (anaglyph), switched on in the game's settings. PCGamingWiki has the steps."
+    }
+  ],
+  "steam_app_id": "263680"
+}

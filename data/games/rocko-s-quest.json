@@ -1,0 +1,31 @@
+{
+  "id": "rocko_s_quest",
+  "title": "Rocko's Quest",
+  "developer": "",
+  "graphics_api": "",
+  "default_path": "",
+  "exe_name": "",
+  "fixes": [
+    {
+      "id": "rocko_s_quest_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [],
+      "native_formats": [],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Rocko's_Quest",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode, switched on in the game's settings. PCGamingWiki has the steps."
+    }
+  ],
+  "steam_app_id": "297620"
+}

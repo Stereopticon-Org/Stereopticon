@@ -35,7 +35,32 @@
       "source": "3D/VR Compatibility Database (Airtable)",
       "compat_rating": 2,
       "compat_mode": "3D"
+    },
+    {
+      "id": "london_2012_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [
+        "sbs",
+        "sbs_half"
+      ],
+      "native_formats": [
+        "sbs"
+      ],
+      "native_enable": "launch option",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/London_2012",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (side-by-side), switched on in a launch option. PCGamingWiki has the steps."
     }
   ],
-  "steam_app_id": ""
+  "steam_app_id": "71420"
 }

@@ -55,6 +55,35 @@
       "source": "3D/VR Compatibility Database (Airtable)",
       "compat_rating": 4,
       "compat_mode": "3D"
+    },
+    {
+      "id": "trackmania_nations_forever_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [
+        "sbs",
+        "sbs_half",
+        "interlaced",
+        "anaglyph"
+      ],
+      "native_formats": [
+        "sbs",
+        "interlaced",
+        "anaglyph"
+      ],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/TrackMania_Nations_Forever",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (side-by-side, interleaved, anaglyph), switched on in the game's settings. PCGamingWiki has the steps."
     }
   ],
   "steam_app_id": "11020"

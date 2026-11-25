@@ -156,6 +156,39 @@
       "pros": "Game has undocumented AMD HD3D native stereo support — wiz3D unlocks it on non-AMD GPUs too. No shader patching needed; the game renders both eyes itself.",
       "cons": "Skybox at wrong depth (per wiz3D notes). Some shader effects may still benefit from a per-game iZ3D Shader Fix.",
       "notes": "Cross-mapped from HD3D native — wiz3D can also drive the original Nvidia 3D Vision Direct Mode for this game (Sniper Elite + Zombie Army franchises excepted)."
+    },
+    {
+      "id": "deus_ex_human_revolution_director_s_cut_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [
+        "sbs",
+        "sbs_half",
+        "tab",
+        "tab_half",
+        "interlaced",
+        "sr_weave"
+      ],
+      "native_formats": [
+        "sbs",
+        "tab",
+        "interlaced",
+        "hd3d",
+        "sr"
+      ],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Deus_Ex%3A_Human_Revolution_-_Director's_Cut",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (side-by-side, top-and-bottom, interleaved, AMD HD3D, glasses-free 3D displays), switched on in the game's settings. PCGamingWiki has the steps."
     }
   ],
   "steam_app_id": "238010"

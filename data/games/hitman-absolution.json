@@ -86,6 +86,41 @@
       "compat_rating": null,
       "compat_mode": "3D",
       "deprecated": true
+    },
+    {
+      "id": "hitman_absolution_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [
+        "sbs",
+        "sbs_half",
+        "tab",
+        "tab_half",
+        "interlaced",
+        "anaglyph",
+        "sr_weave"
+      ],
+      "native_formats": [
+        "sbs",
+        "tab",
+        "interlaced",
+        "anaglyph",
+        "hd3d",
+        "sr"
+      ],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Hitman%3A_Absolution",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (side-by-side, top-and-bottom, interleaved, anaglyph, AMD HD3D, glasses-free 3D displays), switched on in the game's settings. PCGamingWiki has the steps."
     }
   ],
   "steam_app_id": "203140"

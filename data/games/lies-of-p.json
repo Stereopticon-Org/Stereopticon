@@ -20,7 +20,31 @@
       "source": "3D/VR Compatibility Database (Airtable)",
       "compat_rating": 5,
       "compat_mode": "VR"
+    },
+    {
+      "id": "lies_of_p_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": false,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "native",
+      "native_outputs": [
+        "sr_weave"
+      ],
+      "native_formats": [
+        "sr"
+      ],
+      "native_enable": "in-game settings",
+      "native_exclusive": "Samsung Odyssey 3D Hub",
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Lies_of_P",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (glasses-free 3D displays), switched on in the game's settings. It only works with Samsung Odyssey 3D Hub. PCGamingWiki has the steps."
     }
   ],
-  "steam_app_id": ""
+  "steam_app_id": "1627720"
 }

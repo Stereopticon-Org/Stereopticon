@@ -1,0 +1,38 @@
+{
+  "id": "hedgewars",
+  "title": "Hedgewars",
+  "developer": "",
+  "graphics_api": "",
+  "default_path": "",
+  "exe_name": "",
+  "fixes": [
+    {
+      "id": "hedgewars_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [
+        "sbs",
+        "sbs_half",
+        "anaglyph"
+      ],
+      "native_formats": [
+        "sbs",
+        "anaglyph"
+      ],
+      "native_enable": "launch option",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Hedgewars",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (side-by-side, anaglyph), switched on in a launch option. PCGamingWiki has the steps."
+    }
+  ],
+  "steam_app_id": "2223810"
+}

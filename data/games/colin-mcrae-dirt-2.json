@@ -65,7 +65,29 @@
       "source": "3D/VR Compatibility Database (Airtable)",
       "compat_rating": null,
       "compat_mode": "3D"
+    },
+    {
+      "id": "colin_mcrae_dirt_2_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": false,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [],
+      "native_formats": [
+        "hd3d"
+      ],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Colin_McRae%3A_DiRT_2",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (AMD HD3D), switched on in the game's settings. PCGamingWiki has the steps."
     }
   ],
-  "steam_app_id": ""
+  "steam_app_id": "12840"
 }

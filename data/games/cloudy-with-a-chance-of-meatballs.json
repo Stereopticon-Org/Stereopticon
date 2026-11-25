@@ -1,0 +1,35 @@
+{
+  "id": "cloudy_with_a_chance_of_meatballs",
+  "title": "Cloudy with a Chance of Meatballs",
+  "developer": "",
+  "graphics_api": "",
+  "default_path": "",
+  "exe_name": "",
+  "fixes": [
+    {
+      "id": "cloudy_with_a_chance_of_meatballs_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [
+        "anaglyph"
+      ],
+      "native_formats": [
+        "anaglyph"
+      ],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Cloudy_with_a_Chance_of_Meatballs",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (anaglyph), switched on in the game's settings. PCGamingWiki has the steps."
+    }
+  ],
+  "steam_app_id": "33270"
+}

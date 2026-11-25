@@ -167,3 +167,7 @@ Downloaded at setup time and installed to SteamVR/drivers/vrto3d/. Not modified.
 
 ---
 *This NOTICE file must be retained in all distributions of Stereopticon.*
+
+## Game data from PCGamingWiki
+
+Which games have their own 3D mode, and which formats they output, comes from PCGamingWiki's list of games with native 3D (https://www.pcgamingwiki.com/wiki/Glossary:Native_3D) and its game pages. Stereopticon stores these facts and links to each game's page; PCGamingWiki's own text is not included. PCGamingWiki content is licensed under CC BY-NC-SA 3.0.

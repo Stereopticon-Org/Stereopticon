@@ -1,0 +1,41 @@
+{
+  "id": "exapunks_tec_redshift_player",
+  "title": "Exapunks: TEC Redshift Player",
+  "developer": "",
+  "graphics_api": "",
+  "default_path": "",
+  "exe_name": "",
+  "fixes": [
+    {
+      "id": "exapunks_tec_redshift_player_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [
+        "sbs",
+        "sbs_half",
+        "tab",
+        "tab_half",
+        "anaglyph"
+      ],
+      "native_formats": [
+        "sbs",
+        "tab",
+        "anaglyph"
+      ],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Exapunks%3A_TEC_Redshift_Player",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (side-by-side, top-and-bottom, anaglyph), switched on in the game's settings. PCGamingWiki has the steps."
+    }
+  ],
+  "steam_app_id": "948420"
+}

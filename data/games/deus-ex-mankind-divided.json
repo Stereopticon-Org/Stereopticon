@@ -89,6 +89,31 @@
       "source": "3D/VR Compatibility Database (Airtable)",
       "compat_rating": null,
       "compat_mode": "3D"
+    },
+    {
+      "id": "deus_ex_mankind_divided_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [
+        "sbs",
+        "sbs_half"
+      ],
+      "native_formats": [
+        "sbs"
+      ],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Deus_Ex%3A_Mankind_Divided",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode (side-by-side), switched on in the game's settings. PCGamingWiki has the steps."
     }
   ],
   "steam_app_id": "337000"

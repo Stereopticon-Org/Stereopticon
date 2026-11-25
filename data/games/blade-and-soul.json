@@ -35,6 +35,26 @@
       "source": "3D/VR Compatibility Database (Airtable)",
       "compat_rating": 4,
       "compat_mode": "3D"
+    },
+    {
+      "id": "blade_soul_native_3d",
+      "name": "Own 3D mode (built into the game)",
+      "type": "native_3d",
+      "cost": "free",
+      "authors": [
+        "Built into the game"
+      ],
+      "recommended": true,
+      "rendering_method": "Dual-View Rendering",
+      "headtracking": "None",
+      "native_outputs": [],
+      "native_formats": [],
+      "native_enable": "in-game settings",
+      "native_exclusive": null,
+      "pipeline_overrides": {},
+      "url": "https://www.pcgamingwiki.com/wiki/Blade_%26_Soul",
+      "source": "PCGamingWiki (Glossary:Native 3D)",
+      "notes": "This game has its own 3D mode, switched on in the game's settings. PCGamingWiki has the steps."
     }
   ],
   "steam_app_id": ""

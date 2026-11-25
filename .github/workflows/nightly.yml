@@ -36,10 +36,12 @@ jobs:
         id: version
         shell: bash
         run: |
-          # The next patch version: nightlies after 0.1.0 are 0.1.1-nightly.N,
-          # newer than the release (for beta updates) and older than 0.1.1.
+          # The next patch version: nightlies after 0.1.0 are 0.1.1-nightly.<UTC
+          # time>, newer than the release and older than 0.1.1. The fixed-width
+          # time (202611251230) keeps GitHub's Releases page, which sorts tags
+          # as text, in date order; a run number put nightly.8 above nightly.11.
           base=$(node -p "const [a,b,c]=require('./package.json').version.split('-')[0].split('.').map(Number); [a,b,c+1].join('.')")
-          version="$base-nightly.${{ github.run_number }}"
+          version="$base-nightly.$(date -u +%Y%m%d%H%M)"
           npm version --no-git-tag-version --allow-same-version "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
@@ -55,8 +57,8 @@ jobs:
       - name: Build the installer and portable zip
         run: npm run dist -- --publish never
 
-      # Each nightly is its own pre-release (v0.1.0-nightly.<run>) so the
-      # app can compare versions; only the newest three are kept.
+      # Each nightly is its own pre-release (v0.1.1-nightly.<UTC time>) so the
+      # app can compare versions; only the newest three (by date) are kept.
       - name: Publish the nightly pre-release
         shell: bash
         env:
@@ -64,8 +66,13 @@ jobs:
         run: |
           v="${{ steps.version.outputs.version }}"
           sha=$(git rev-parse --short HEAD)
-          gh release create "v$v" --prerelease --target "$GITHUB_SHA"             --title "Stereopticon $v (nightly)"             --notes "Automatic build of main at $sha: $(git log -1 --format=%s). For testing, not a release."             dist/*Setup*.exe dist/*-portable.zip
-          gh release list --limit 100 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease) | .tagName'             | grep -- '-nightly.' | tail -n +4             | while read -r old; do gh release delete "$old" --cleanup-tag --yes; done
+          gh release create "v$v" --prerelease --target "$GITHUB_SHA" \
+            --title "Stereopticon $v (nightly #${{ github.run_number }})" \
+            --notes "Automatic build of main at $sha: $(git log -1 --format=%s). For testing, not a release." \
+            dist/*Setup*.exe dist/*-portable.zip
+          gh release list --limit 100 --json tagName,isPrerelease,createdAt \
+            --jq '[.[] | select(.isPrerelease and (.tagName | contains("-nightly.")))] | sort_by(.createdAt) | reverse | .[3:] | .[].tagName' \
+            | while read -r old; do gh release delete "$old" --cleanup-tag --yes; done
 
       - name: Keep the installer as a workflow artifact
         uses: actions/upload-artifact@v7

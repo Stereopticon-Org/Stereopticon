@@ -74,7 +74,7 @@ getDisplaySoftwareStatus:  (familyId, deviceId)        =>
     getInstalledGameIds: ()      => ipcRenderer.invoke('install:installedGameIds'),
 
     // Launch
-    launchGame: (exePath) => ipcRenderer.invoke('game:launch', { exePath }),
+    launchGame: (exePath, gameId) => ipcRenderer.invoke('game:launch', { exePath, gameId: gameId || null }),
 
     // Pipeline executor (resolver-driven adapter dispatch — single call
     // replaces scattered per-tool config writes from the renderer).
@@ -143,6 +143,7 @@ getDisplaySoftwareStatus:  (familyId, deviceId)        =>
     },
     wiz3dListReleases: () => ipcRenderer.invoke('wiz3d:listReleases'),
     wiz3dPaths:        () => ipcRenderer.invoke('wiz3d:paths'),
+    wiz3dContributors: () => ipcRenderer.invoke('wiz3d:contributors'),
     wiz3dAddCustom:    (kind, name) => ipcRenderer.invoke('wiz3d:addCustom', { kind, name }),
     wiz3dRemoveCustom: (tag) => ipcRenderer.invoke('wiz3d:removeCustom', { tag }),
     wiz3dSetDefault:   (tag) => ipcRenderer.invoke('wiz3d:setDefault', { tag }),

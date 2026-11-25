@@ -112,4 +112,24 @@ function graphicsApiFromImports(imports = []) {
     return null;
 }
 
-module.exports = { readPe, graphicsApiFromImports };
+/**
+ * Strings from an exe's version information ("ProductName": "The Ball",
+ * "CompanyName": "Teotl Studios"), read from the UTF-16 string table.
+ */
+function versionStrings(file, keys = ['ProductName', 'FileDescription', 'CompanyName']) {
+    let buf;
+    try { buf = fs.readFileSync(file); } catch { return {}; }
+    // The table sits near the end, in the resources; scan both byte alignments.
+    const tail = buf.subarray(Math.max(0, buf.length - 4 * 1024 * 1024));
+    const texts = [tail.toString('utf16le'), tail.subarray(1).toString('utf16le')];
+    const out = {};
+    for (const key of keys) {
+        for (const t of texts) {
+            const m = new RegExp(`${key}\\u0000+([^\\u0000]{1,120})\\u0000`).exec(t);
+            if (m && m[1].trim()) { out[key] = m[1].trim(); break; }
+        }
+    }
+    return out;
+}
+
+module.exports = { readPe, graphicsApiFromImports, versionStrings };

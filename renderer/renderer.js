@@ -977,6 +977,18 @@ async function offerWiz3DUpdateHere(fixId) {
     } catch { /* leave the button as it is */ }
 }
 
+// ── wiz3D credits: its GitHub contributors (cached by the main process) ──
+let _wiz3dCredits = null;
+async function loadWiz3DCredits() {
+    const people = await window.api.wiz3dContributors().catch(() => []);
+    if (!people?.length) return;
+    const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    _wiz3dCredits = people.map(p => `<a href="#" class="fix-credit-link" onclick="window.api.openUrl('${p.url}');return false;" title="${p.contributions} contributions to wiz3D">${esc(p.login)}</a>`).join(', ') +
+        ', iZ3D (original)';
+    const el = document.getElementById('wiz3dCredits');
+    if (el) el.innerHTML = _wiz3dCredits;
+}
+
 // ── Per-game wiz3D version and render path ───────────────────────
 let _wiz3dReleases = null;    // { releases, downloaded, current } from the main process
 let _wiz3dPathList = null;    // [{ key, label, type }]
@@ -989,7 +1001,8 @@ function recommendedWiz3DPathKey(fix, game) {
         case 'wiz3d_opengl':      return 'opengl';
         case 'wiz3d_3dvision_dm': return /9/.test(api) && !/1[01]/.test(api) ? '3dv-dx9' : /10/.test(api) && !/11/.test(api) ? '3dv-dx10' : '3dv-dx11';
         default:
-            if (/1[01]|12/.test(api)) return 'injector-dx11';
+            if (/1[01]/.test(api))   return 'injector-dx11';
+            if (/12|vulkan/.test(api)) return null;   // not supported by wiz3D yet
             if (/9/.test(api))        return 'injector-dx9';
             if (/8/.test(api))        return 'injector-dx8';
             if (/7|ddraw/.test(api))  return 'injector-dx7';
@@ -1189,7 +1202,10 @@ window.addGameFromExe = async function() {
     renderSidebar(gamesData);
     selectGame(row);
     // Straight on to naming it, matching it and finding its artwork.
-    setTimeout(() => openDetailsModal(true), 400);
+    // Recognised from the exe's own name: say so (details stay editable with ⚙).
+    // Otherwise ask for the name, match and artwork.
+    if (r.matched) showNotice(`Added ${r.game.title}, recognised as ${r.matched}. Use ⚙ on its page if that's wrong.`);
+    else setTimeout(() => openDetailsModal(true), 400);
 };
 
 // ── Game details: name, catalogue match, API, artwork, exe ───────
@@ -1673,6 +1689,8 @@ async function handleInstallClick() {
     const gamePath = getInstallPath();
     if (!gamePath) { showResult(false, 'Set the Game Folder path first — click Browse…'); return; }
     if (isWiz3DType(selectedProfile?.type)) {
+        if (selectedProfile.unsupported_api &&
+            !confirm(`This game uses ${selectedProfile.unsupported_api}, which wiz3D does not support yet, so it will most likely not show 3D. Install wiz3D anyway?`)) return;
         const info = selectedGame._inspect || await refreshGameInspect();
         if (info && !info.exePath) {
             if (!confirm("Stereopticon could not find this game's .exe. wiz3D has to go next to it. Choose the .exe now?")) return;
@@ -1964,7 +1982,7 @@ async function handleLaunchClick() {
     
     const result = isUEVR
         ? await window.api.launchWithUEVR(exePath)
-        : await window.api.launchGame(exePath);
+        : await window.api.launchGame(exePath, selectedGame?.id);
 
     // After the existing isUEVR / launchWithUEVR call succeeds,
     // wire up the injection status listener so the user sees progress:
@@ -3518,6 +3536,7 @@ const WIZ3D_STATUS_TEXT = {
     partial:  { label: 'Partly working', colour: 'var(--warn)', tip: 'Works with known problems; see the notes.' },
     untested: { label: 'Untested', colour: 'var(--text-dim)', tip: 'Listed by wiz3D but not yet tested.' },
     broken:   { label: 'Not working yet', colour: 'var(--danger)', tip: 'Known not to work with the current wiz3D.' },
+    unsupported: { label: 'Not supported yet', colour: 'var(--danger)', tip: 'wiz3D does not support this graphics API yet (DirectX 12 or Vulkan).' },
 };
 function wiz3dStatusHtml(fix) {
     if (!fix || !isWiz3DType(fix.type)) return '';
@@ -3565,9 +3584,13 @@ function renderDetailView() {
     // Author list becomes a single anchor opening the fix page (replaces the
     // old "Visit Fix Page" button). Falls back to a plain span if no URL.
     const fixUrl = selectedProfile.url || '';
-    const authorsHtml = fixUrl
-        ? `<a href="#" class="fix-credit-link" onclick="window.api.openUrl('${fixUrl}');return false;" title="Open fix page ↗">${authors}</a>`
-        : `<span>${authors}</span>`;
+    // wiz3D's credits are everyone who has contributed to it on GitHub
+    // (filled in by loadWiz3DCredits), plus iZ3D, whose code it grew from.
+    const authorsHtml = isWiz3DType(selectedProfile.type)
+        ? `<span id="wiz3dCredits">${_wiz3dCredits || 'wiz3D contributors'}</span>`
+        : fixUrl
+            ? `<a href="#" class="fix-credit-link" onclick="window.api.openUrl('${fixUrl}');return false;" title="Open fix page ↗">${authors}</a>`
+            : `<span>${authors}</span>`;
     const reqHtml  = (selectedProfile.prerequisites||[]).map(r=>`<span class="req-badge">REQ: ${r}</span>`).join('');
     // Build a single "Mod" descriptor: pipeline-name + version (if available).
     // E.g. "Geo-11 v0.6.56", "wiz3D v0.4.2", "Vireio Perception v4.1".
@@ -3678,6 +3701,7 @@ function renderDetailView() {
     updateConfigBar();
     customizeAllPendingSelects();   // hero & fix-profile select were just rebuilt
     loadWiz3DGameOptions().catch(e => console.warn('[wiz3D options]', e));
+    if (isWiz3DType(selectedProfile.type) && !_wiz3dCredits) loadWiz3DCredits();
 }
 
 window.switchProfile = fixId => { selectedProfile = visibleFixes(selectedGame).find(f=>f.id===fixId) || selectedProfile; renderDetailView(); updateBottomBar(); loadReshadeStatus(); updateHeadtrackingUI(); };
@@ -4492,6 +4516,8 @@ window.openSettingsModal = async function() {
         const auto = document.getElementById('autoWiz3dToggle');
         const appBeta = document.getElementById('appBetaToggle');
         if (auto)    auto.checked    = s.autoWiz3d !== false;
+        const lvl = document.getElementById('launchViaLaunchersToggle');
+        if (lvl) lvl.checked = s.launchViaLaunchers !== false;
         if (appBeta) appBeta.checked = s.appChannel === 'beta';
         const ks = document.getElementById('sgdbKeyStatus');
         if (ks) ks.textContent = s.steamGridDbKey ? `Your key is saved (${s.steamGridDbKey}).`
@@ -4867,26 +4893,49 @@ function visibleFixes(game) {
     if (game && !fixes.some(f => isWiz3DType(f.type))) shown.push(tryWiz3DFix(game));
     return shown;
 }
+// Graphics APIs wiz3D can inject into. A game that only uses others (DirectX 12,
+// Vulkan) is marked "not supported yet" instead of being offered an injector.
+const WIZ3D_APIS = ['dx7', 'dx8', 'dx9', 'dx10', 'dx11', 'opengl'];
+function gameApis(game) {
+    const list = [...(game?.graphics_apis || [])];
+    for (const a of [].concat(game?.graphics_api || [])) {
+        const v = String(a).toLowerCase();
+        if (/12/.test(v)) list.push('dx12'); else if (/vulkan/.test(v)) list.push('vulkan');
+        else if (/1[01]/.test(v)) list.push('dx11'); else if (/9/.test(v)) list.push('dx9');
+        else if (/opengl/.test(v)) list.push('opengl');
+    }
+    return [...new Set(list)];
+}
+function wiz3DUnsupportedApi(game) {
+    const apis = gameApis(game);
+    if (!apis.length || apis.some(a => WIZ3D_APIS.includes(a))) return null;
+    return apis.map(a => a === 'dx12' ? 'DirectX 12' : a === 'vulkan' ? 'Vulkan' : a.toUpperCase()).join(' / ');
+}
+
 function tryWiz3DFix(game) {
     if (!game._tryFix) {
+        const unsupported = wiz3DUnsupportedApi(game);
         game._tryFix = {
             id:          `${game.id}__wiz3d_try`,
-            name:        'wiz3D (untested)',
+            name:        unsupported ? `wiz3D (${unsupported} not supported yet)` : 'wiz3D (untested)',
             type:        'wiz3d_wrapper',
             cost:        'free',
-            authors:     ['effcol', 'iZ3D (original)', 'bo3b (open-source release)'],
+            authors:     ['wiz3D contributors'],
             url:         'https://github.com/Stereopticon-Org/wiz3D',
             license:     'LGPL-2.1',
-            recommended: !(game.fixes || []).length,
+            recommended: !(game.fixes || []).length && !unsupported,
             rendering_method: 'Automatic Stereo Injection',
-            wiz3d_status: 'untested',
+            wiz3d_status: unsupported ? 'unsupported' : 'untested',
             wiz3d_bits:  game.cpu_architecture || '',
             native_outputs: ['sbs', 'sbs_half', 'tab', 'tab_half', 'anaglyph', 'interlaced', 'sr_weave'],
             pipeline_overrides: {},
             try_fix:     true,
-            pros:        'Nobody has reported on this game with wiz3D yet. Stereopticon picks the stereo injector ' +
-                         'from the game\'s graphics API; choose another render path below if it does not work.',
-            notes:       'Please use Report a result after trying it, so the next person knows what to expect.',
+            unsupported_api: unsupported,
+            pros:        unsupported
+                ? `This game uses ${unsupported}, which wiz3D cannot put into 3D yet. If the game has its own 3D mode, use that; otherwise check stereopticon.org for news.`
+                : 'Nobody has reported on this game with wiz3D yet. Stereopticon picks the stereo injector ' +
+                  'from the game\'s graphics API; choose another render path below if it does not work.',
+            notes:       unsupported ? '' : 'Please use Report a result after trying it, so the next person knows what to expect.',
         };
     }
     return game._tryFix;

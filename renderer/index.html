@@ -671,6 +671,14 @@
                     <button onclick="closeSettingsModal();openReportModal('app')" class="modal-cancel" style="font-size:11px;">Report a problem with Stereopticon</button>
                 </div>
 
+                <label class="settings-card settings-check" style="margin-bottom:22px;">
+                    <input type="checkbox" id="launchViaLaunchersToggle" onchange="window.api.setSettings({ launchViaLaunchers: this.checked })">
+                    <span>
+                        <span class="settings-check-title">Launch Steam and Epic games through their launcher</span>
+                        <span class="settings-check-sub">On by default. Steam or Epic starts the game, so their sign-in, DRM and launch options work; wiz3D still loads because it sits next to the game's .exe. Off starts the .exe directly.</span>
+                    </span>
+                </label>
+
                 <!-- Game libraries: what the last scan found, per launcher -->
                 <div class="settings-heading">Game libraries</div>
                 <div class="settings-card" style="margin-bottom:8px;">

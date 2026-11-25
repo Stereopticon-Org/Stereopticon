@@ -104,8 +104,12 @@ async function epicGames() {
         try {
             const j = JSON.parse(await fsp.readFile(path.join(dir, e.name), 'utf8'));
             if (!j.InstallLocation || j.bIsApplication === false) continue;
+            // Launching through Epic (its URL) keeps sign-in and DRM working.
+            const launchUrl = j.CatalogNamespace && j.CatalogItemId && j.AppName
+                ? `com.epicgames.launcher://apps/${encodeURIComponent(`${j.CatalogNamespace}:${j.CatalogItemId}:${j.AppName}`)}?action=launch&silent=true`
+                : null;
             out.push({ source: 'epic', title: j.DisplayName || path.basename(j.InstallLocation), dir: j.InstallLocation,
-                       exe: j.LaunchExecutable ? path.join(j.InstallLocation, j.LaunchExecutable) : null });
+                       exe: j.LaunchExecutable ? path.join(j.InstallLocation, j.LaunchExecutable) : null, launchUrl });
         } catch { /* unreadable manifest */ }
     }
     try {
@@ -167,15 +171,39 @@ async function ubisoftGames() {
 
 // ── Xbox app ─────────────────────────────────────────────────────
 
+// An Xbox app (PC Game Pass) game's MicrosoftGame.config names the game and
+// its exe: <ShellVisuals DefaultDisplayName="..."/> and <Executable Name="..."/>.
+async function msGameConfig(dir) {
+    try {
+        const xml = await fsp.readFile(path.join(dir, 'MicrosoftGame.config'), 'utf8');
+        const name = (/DefaultDisplayName="([^"]+)"/i.exec(xml) || [])[1];
+        const exe = (/<Executable[^>]*\sName="([^"]+\.exe)"/i.exec(xml) || [])[1];
+        return { name: name && !/^ms-resource:/i.test(name) ? name : null, exe: exe ? path.join(dir, exe) : null };
+    } catch { return {}; }
+}
+
 async function xboxGames() {
     const out = [];
+    const dirs = new Set();
+    // The Xbox app's default library folders on every drive...
     for (const letter of 'CDEFGHIJKLMNOPQRSTUVWXYZ') {
         const root = `${letter}:\\XboxGames`;
         for (const e of await readdirSafe(root)) {
             if (!e.isDirectory() || /^GameSave$/i.test(e.name)) continue;
             const content = path.join(root, e.name, 'Content');
-            out.push({ source: 'xbox', title: e.name, dir: (await exists(content)) ? content : path.join(root, e.name) });
+            dirs.add((await exists(content)) ? content : path.join(root, e.name));
         }
+    }
+    // ...and the install folders Gaming Services records, which can be anywhere.
+    for (const b of parseReg(await regQuery('HKLM\\SOFTWARE\\Microsoft\\GamingServices\\PackageRepository\\Root'))) {
+        for (const v of Object.values(b.values)) {
+            if (/^[A-Z]:\\/i.test(v) && !/\\WindowsApps\\/i.test(v) && await exists(v)) dirs.add(v.replace(/\\+$/, ''));
+        }
+    }
+    for (const dir of dirs) {
+        const cfg = await msGameConfig(dir);
+        const folder = /^content$/i.test(path.basename(dir)) ? path.basename(path.dirname(dir)) : path.basename(dir);
+        out.push({ source: 'xbox', title: cfg.name || folder, dir, exe: cfg.exe && await exists(cfg.exe) ? cfg.exe : null });
     }
     return out;
 }
@@ -281,7 +309,7 @@ async function scan(targets, { folderMatches }) {
     }
 
     // Per catalogue game: its folder, the exe its launcher reports, its Steam id.
-    const paths = {}, exes = {}, steamIds = {};
+    const paths = {}, exes = {}, steamIds = {}, launchUrls = {};
     const used = new Set();
     let n = 0;
     for (const t of targets) {
@@ -300,6 +328,7 @@ async function scan(targets, { folderMatches }) {
         if (hit) {
             paths[t.id] = hit.dir; used.add(hit);
             if (hit.exe) exes[t.id] = hit.exe;
+            if (hit.launchUrl) launchUrls[t.id] = hit.launchUrl;
             if (hit.steam_app_id) steamIds[t.id] = String(hit.steam_app_id);
         }
     }
@@ -311,7 +340,7 @@ async function scan(targets, { folderMatches }) {
     // Games found per launcher (catalogue matches and others), for Settings.
     const sources = {};
     for (const e of [...used, ...extras]) sources[e.source] = (sources[e.source] || 0) + 1;
-    const result = { at: Date.now(), paths, exes, steamIds, extras, steamLibraries: libs, sources };
+    const result = { at: Date.now(), paths, exes, steamIds, launchUrls, extras, steamLibraries: libs, sources };
     try {
         await fsp.mkdir(path.dirname(CACHE_FILE), { recursive: true });
         await fsp.writeFile(CACHE_FILE, JSON.stringify(result));

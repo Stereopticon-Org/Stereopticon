@@ -71,9 +71,28 @@ async function download(onProgress = () => {}) {
 }
 
 /** Start Stereo Loom, downloading it first if needed. */
+// Start the exe. Straight after a download, antivirus is often still
+// scanning it and Windows reports EBUSY or EPERM, so wait and try again.
+function startOnce(exe) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(exe, [], { detached: true, stdio: 'ignore', cwd: path.dirname(exe) });
+        child.once('spawn', () => { child.unref(); resolve(); });
+        child.once('error', reject);
+    });
+}
+async function startWithRetry(exe, tries = 10) {
+    for (let i = 1; ; i++) {
+        try { return await startOnce(exe); }
+        catch (e) {
+            if (i >= tries || !['EBUSY', 'EPERM', 'EACCES'].includes(e.code)) throw e;
+            await new Promise(r => setTimeout(r, 1000));
+        }
+    }
+}
+
 async function open(onProgress) {
     const loom = installed() || await download(onProgress);
-    spawn(loom.exe, [], { detached: true, stdio: 'ignore', cwd: path.dirname(loom.exe) }).unref();
+    await startWithRetry(loom.exe);
     return loom;
 }
 

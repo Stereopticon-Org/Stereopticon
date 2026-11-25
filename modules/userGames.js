@@ -81,7 +81,11 @@ function addFromExe(exePath, title) {
 
     // Inside a Steam library? Use the store's name for the folder.
     const steamTitle = steamTitleForPath(exePath);
-    const name = title || steamTitle || path.basename(path.dirname(exePath)) || path.basename(exePath, '.exe');
+    // The exe's own product name ("Ghostwire: Tokyo"), unless it is an
+    // engine's or launcher's generic one.
+    const product = peInfo.versionStrings(exePath).ProductName || '';
+    const productTitle = /unreal engine|unity|bootstrap|launcher|setup|^game$/i.test(product) ? '' : product;
+    const name = title || steamTitle || productTitle || path.basename(path.dirname(exePath)) || path.basename(exePath, '.exe');
     let id = `user_${slugOf(name) || 'game'}`;
     for (let i = 2; store.games.some(g => g.id === id); i++) id = `user_${slugOf(name)}-${i}`;
 
@@ -259,7 +263,7 @@ function setDiscovered(entries) {
         out.push({
             id: e.steam_app_id ? `steam_${e.steam_app_id}` : `${e.source}_${key}`,
             title: e.title, steam_app_id: e.steam_app_id || '', install_dir: e.dir,
-            exe_path: e.exe && fs.existsSync(e.exe) ? e.exe : undefined, source: e.source,
+            exe_path: e.exe && fs.existsSync(e.exe) ? e.exe : undefined, source: e.source, launch_url: e.launchUrl || undefined,
         });
     }
     out.sort((a, b) => a.title.localeCompare(b.title));

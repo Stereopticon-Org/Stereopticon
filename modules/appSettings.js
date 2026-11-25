@@ -20,7 +20,7 @@ const path = require('path');
 const BASE = process.env.STEREOPTICON_HOME || path.join(os.homedir(), '.stereopticon');
 const FILE = path.join(BASE, 'settings.json');
 
-const DEFAULTS = { wiz3dChannel: 'stable', detailedLogging: false, autoWiz3d: true, appChannel: 'stable', steamGridDbKey: '' };
+const DEFAULTS = { wiz3dChannel: 'stable', detailedLogging: false, autoWiz3d: true, appChannel: 'stable', steamGridDbKey: '', launchViaLaunchers: true };
 
 function readAll() {
     try { return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }; }
@@ -35,6 +35,7 @@ function set(values) {
     if (!['stable', 'beta'].includes(next.appChannel)) next.appChannel = 'stable';
     next.detailedLogging = !!next.detailedLogging;
     next.autoWiz3d = next.autoWiz3d !== false;
+    next.launchViaLaunchers = next.launchViaLaunchers !== false;
     fs.mkdirSync(BASE, { recursive: true });
     fs.writeFileSync(FILE, JSON.stringify(next, null, 2));
     return next;

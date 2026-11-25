@@ -130,7 +130,7 @@ const { markInstalled, markUninstalled, isInstalled, getInstallRecord,
         getInstalledGameIds, getAllInstalled, setInstallExtra } = require('../modules/installState');
 const { writeUEVRAutoConfig, buildUEVRConfig, cleanupAutoConfig } = require('../modules/uevrAutoConfig');
 const { installReshade, detectReShadeInstall, detectGraphicsApi, getReshadeStatus, getShadersForPipeline } = require('../modules/reshade');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const { getDisplaySettings, writeDisplaySetting } = require('../modules/displaySettings');
 const profileManager = require('../modules/profileManager');
 const DISPLAYS_DIR   = path.join(__dirname, '..', 'data', 'displays');
@@ -607,31 +607,55 @@ ipcMain.handle('pipeline:execute', async (_, input) => {
 });
 
 // ── Launch game ───────────────────────────────────────────────
-ipcMain.handle('game:launch', async (_, { exePath }) => {
+// How a game is started:
+//   1. Steam games through Steam (steam://rungameid/<id>): Steam DRM, launch
+//      options and the overlay all work, and Steam starts its own launcher.
+//   2. Epic games through the Epic launcher URL from their install manifest.
+//   3. Anything else with Windows' "start", which shows the admin prompt for
+//      games that need one and runs the exe from its own folder.
+// wiz3D sits next to the game's exe, so it loads whichever way it starts.
+// Settings → General → "Launch Steam and Epic games through their launcher".
+function launcherUrlFor(gameId, exePath) {
+    if (appSettings.get('launchViaLaunchers') === false || !gameId) return null;
+    const scan = gameLibraries.cached();
+    const row = userGames.list().find(g => g.id === gameId);
+    const appId = scan?.steamIds?.[gameId] || row?.steam_app_id || loadOneGame(gameId)?.steam_app_id;
+    if (appId && /[\\/]steamapps[\\/]common[\\/]/i.test(exePath || '')) return `steam://rungameid/${appId}`;
+    return scan?.launchUrls?.[gameId] || row?.launch_url || null;
+}
+
+ipcMain.handle('game:launch', async (_, { exePath, gameId }) => {
     if (!exePath) return { success: false, message: 'No executable path provided.' };
     // The exe may sit in a subfolder of the game folder (Binaries\Win64, bin\x64...).
     if (!fs.existsSync(exePath)) {
         const { findGameExe } = require('../modules/installer');
         exePath = findGameExe(path.dirname(exePath), path.basename(exePath)) || exePath;
     }
-    logger.info('launch', `Launching ${exePath}`);
     if (!fs.existsSync(exePath)) {
-        return { success: false, message: `Executable not found:\n${exePath}\n\nCheck the Game Folder path — it should be the folder containing the game exe.` };
+        logger.warn('launch', `Not found: ${exePath}`);
+        return { success: false, message: `Executable not found:\n${exePath}\n\nCheck the Game Folder path, or choose the game's .exe on its page.` };
     }
-    try {
-        const child = spawn(exePath, [], {
-            detached: true,
-            stdio:    'ignore',
-            cwd:      path.dirname(exePath),
-            shell:    false,
-        });
-        child.on('error', err => console.error('Launch error:', err));
-        child.on('exit', code => logger.info('launch', `${path.basename(exePath)} exited with code ${code}`));
-        child.unref();
-        return { success: true };
-    } catch (e) {
-        return { success: false, message: `Failed to launch:\n${e.message}` };
+    const url = launcherUrlFor(gameId, exePath);
+    if (url) {
+        logger.info('launch', `Launching ${gameId} through its launcher: ${url}`);
+        try { await shell.openExternal(url); return { success: true, via: url.startsWith('steam:') ? 'Steam' : 'Epic' }; }
+        catch (e) { logger.warn('launch', `Launcher URL failed (${e.message}); starting the exe instead`); }
     }
+    logger.info('launch', `Launching ${exePath}`);
+    // Start-Process goes through Windows' shell: the admin prompt appears for
+    // games that need it, the game runs from its own folder, and nothing of
+    // Stereopticon's is inherited. A refused prompt or bad exe is reported.
+    const esc = s => String(s).replace(/'/g, "''");
+    const ps = `Start-Process -FilePath '${esc(exePath)}' -WorkingDirectory '${esc(path.dirname(exePath))}' -ErrorAction Stop`;
+    return new Promise(resolve => {
+        execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps],
+            { windowsHide: true, timeout: 60000 }, (err, _out, stderr) => {
+                if (!err) { resolve({ success: true }); return; }
+                const msg = (String(stderr || '').split(/\r?\n/).find(l => l.trim()) || err.message).trim();
+                logger.error('launch', `Could not start ${exePath}: ${msg}`);
+                resolve({ success: false, message: `Could not start the game:\n${msg}` });
+            });
+    });
 });
 
 // ── Launch game + UEVR Injector ───────────────────────────────
@@ -882,6 +906,36 @@ ipcMain.handle('wiz3d:setDefault', (_, { tag }) => {
     try { const r = wiz3dManager.setCurrent(tag); logger.info('wiz3d', `Default is now ${tag}`); return { success: true, ...r }; }
     catch (e) { return { success: false, message: e.message }; }
 });
+// Everyone who has contributed to wiz3D on GitHub, for its fix credits.
+// Cached for a day in ~/.stereopticon/cache/wiz3d-contributors.json.
+ipcMain.handle('wiz3d:contributors', async () => {
+    const file = path.join(appSettings.BASE, 'cache', 'wiz3d-contributors.json');
+    try {
+        const c = JSON.parse(fs.readFileSync(file, 'utf8'));
+        if (Date.now() - c.at < 24 * 60 * 60 * 1000) return c.people;
+    } catch { /* not cached yet */ }
+    try {
+        const https = require('https');
+        const people = await new Promise((resolve, reject) => {
+            https.get('https://api.github.com/repos/Stereopticon-Org/wiz3D/contributors?per_page=50',
+                { headers: { 'User-Agent': 'Stereopticon', Accept: 'application/vnd.github+json' } }, res => {
+                let body = ''; res.setEncoding('utf8');
+                res.on('data', d => { body += d; });
+                res.on('end', () => {
+                    try {
+                        resolve(JSON.parse(body).filter(p => p.type === 'User' && !p.login.endsWith('[bot]'))
+                            .map(p => ({ login: p.login, url: p.html_url, contributions: p.contributions })));
+                    } catch (e) { reject(e); }
+                });
+            }).on('error', reject);
+        });
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify({ at: Date.now(), people }));
+        return people;
+    } catch (e) {
+        try { return JSON.parse(fs.readFileSync(file, 'utf8')).people; } catch { return []; }
+    }
+});
 ipcMain.handle('wiz3d:paths', () => Object.entries(gamePrefs.WIZ3D_PATHS).map(([key, p]) => ({ key, label: p.label, type: p.type })));
 
 // ── Settings that the main process needs ────────────────────────
@@ -920,8 +974,19 @@ ipcMain.handle('games:addFromExe', async (event) => {
     if (!exe) return { success: false, canceled: true };
     try {
         const game = userGames.addFromExe(exe);
-        logger.info('games', `Added ${game.title} (${exe})`);
-        return { success: true, game, row: userGames.sidebarRows().find(r => r.id === game.id) };
+        // Recognise it: the catalogue game with the same name gets matched, so
+        // the added game uses its wiz3D profile and artwork straight away.
+        const slug = s => String(s || '').toLowerCase().replace(/[™®©]/g, '').replace(/^the\s+/, '').replace(/[^a-z0-9]/g, '');
+        const match = loadAllGames().find(g => slug(g.title) === slug(game.title));
+        if (match) {
+            gamePrefs.set(game.id, { details: { match_id: match.id,
+                ...(match.steam_app_id ? { steam_app_id: String(match.steam_app_id) } : {}) } });
+        }
+        gamePrefs.set(game.id, { exePath: exe });
+        logger.info('games', `Added ${game.title} (${exe})${match ? `, matched to ${match.title}` : ''}`);
+        const row = userGames.sidebarRows().find(r => r.id === game.id);
+        return { success: true, game: loadOneGame(game.id) || game, matched: match?.title || null,
+                 row: row && match?.steam_app_id ? { ...row, steam_app_id: String(match.steam_app_id) } : row };
     } catch (e) { return { success: false, message: e.message }; }
 });
 ipcMain.handle('games:chooseExe', async (event, { gameId }) => {
